@@ -1,0 +1,9 @@
+{
+    "name": "st-extension-literouter",
+    "version": "1.3.1",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "check": "node --check index.js && node --check core.js && node --check live-data.js && node --check picker.js && node --check usage.js && node --check usage-ui.js && node --check request-tracker.js && node --check server/literouter-data.mjs && node --check recommendations.js && node --check recommendation-ui.js"
+    }
+}

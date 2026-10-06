@@ -1,0 +1,25 @@
+# Generated packages and test output
+/dist/
+/node_modules/
+/coverage/
+/playwright-report/
+/test-results/
+*.log
+
+# Local development references
+/SillyTavern/
+/LiteRouter-Calculator/
+/st-extension-example/
+/Extension-PromptInspector/
+/Extension-TokenUsage/
+
+# Local settings and environment files
+/.agents/
+/.codex/
+/.aws/
+.env
+.env.*
+!.env.example
+.DS_Store
+Thumbs.db
+*.swp
