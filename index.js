@@ -216,7 +216,7 @@ function loadSettings() {
     if (!['auto', 'helper', 'st-proxy', 'direct'].includes(value.transport)) value.transport = 'auto';
     for (const key of ['query', 'sort', 'plan']) if (typeof value[key] !== 'string') value[key] = DEFAULTS[key];
     value.enabled = Boolean(value.enabled);
-    value.suffixCap = Boolean(value.suffixCap);
+    delete value.suffixCap;
     delete value.trackUsage;
     delete value.proxyPrefix;
     value.recommendEnabled = Boolean(value.recommendEnabled);
@@ -304,7 +304,7 @@ async function initialize() {
             })();
             return { pricingModel: structuredClone(data?.models.find(model => model.id === request.model) ?? null),
                 plan: structuredClone(plan() ?? null), rules: structuredClone(data?.rules),
-                settings: Object.fromEntries(['credits', 'generalSystem', 'generalConversation', 'claudeSystem', 'claudeConversation', 'suffixCap'].map(key => [key, settings[key]])),
+                settings: Object.fromEntries(['credits', 'generalSystem', 'generalConversation', 'claudeSystem', 'claudeConversation'].map(key => [key, settings[key]])),
                 inputTokens, stale: Boolean(live.entries.pricing?.stale),
                 countOutputTokens: async replies => {
                     if (typeof current.getTokenCountAsync !== 'function') return null;

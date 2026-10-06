@@ -60,3 +60,17 @@ SillyTavern/data/default-user/settings.json
 Other users have their own folder under `data/`. If you use a custom data directory, look there instead.
 
 Tracking history is stored under `extension_settings.literouter.usage`. It records request totals, token counts, and credit estimates. History survives reloads and daily resets, which happen at midnight **GMT+7**. Back up your user settings file to keep a copy.
+
+To reset all LiteRouter settings and tracking history:
+
+1. Stop SillyTavern and close its browser tabs.
+2. Open your user's `settings.json` and remove only the `literouter` entry inside `extension_settings`. Keep the JSON valid.
+3. Save the file and restart SillyTavern. The extension will recreate its default settings with empty history.
+
+Public model prices and status are also cached in your browser's local storage under `st-literouter-live-v1`. To clear that cache, open SillyTavern's browser developer console and run:
+
+```js
+localStorage.removeItem('st-literouter-live-v1');
+```
+
+Reload the page to fetch fresh data.

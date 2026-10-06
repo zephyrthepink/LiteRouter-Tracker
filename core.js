@@ -6,7 +6,7 @@ export const ENDPOINTS = Object.freeze({
 export const DEFAULTS = Object.freeze({
     enabled: true, plan: 'Basic', credits: null,
     generalSystem: 5, generalConversation: 16, claudeSystem: 5, claudeConversation: 16,
-    suffixCap: false, hypotheticalTokens: 15000, compareModels: [],
+    hypotheticalTokens: 15000, compareModels: [],
     query: '', sort: 'name', transport: 'auto', refreshSeconds: 60,
     usage: { version: 1, days: {} }, modelColors: {},
     recommendEnabled: false, recommendMode: 'suggest', applyRecommended: false,
@@ -101,7 +101,7 @@ export function canUse(model, plan, plans) {
 export function calculate(model, inputTokens, plan, settings, rules = { premiumBase: 15000, block: 5000 }) {
     const type = modelType(model);
     const credits = settings.credits == null ? plan.cap : Number(settings.credits);
-    const result = { type, optimization: null, cost: null, requests: null, countedTokens: null, capped: false };
+    const result = { type, optimization: null, cost: null, requests: null, countedTokens: null };
     // Official Credits docs: Basic limits vary by model; paid plans are unlimited.
     if (type === 'free') return { ...result, optimization: 1, cost: 1,
         requests: plan.name === 'Basic' ? null : Infinity, freeUnlimited: plan.name !== 'Basic',
@@ -114,11 +114,6 @@ export function calculate(model, inputTokens, plan, settings, rules = { premiumB
         if (model.ctx) tokens = Math.min(tokens, model.ctx);
     } else {
         tokens = Math.min(tokens, optimizationWindow(plan, settings, model.id.includes('claude')).effective);
-        const suffix = /:(\d+)k-context/.exec(model.id);
-        if (settings.suffixCap && suffix && tokens > Number(suffix[1]) * 1000) {
-            tokens = Number(suffix[1]) * 1000;
-            result.capped = true;
-        }
     }
     const optimization = type.startsWith('metered') ? Math.max(1, Math.ceil(tokens / rules.block))
         : tokens <= rules.premiumBase ? 1 : 1 + Math.ceil((tokens - rules.premiumBase) / rules.block);

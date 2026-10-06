@@ -9,7 +9,7 @@ function recommendationCard(row, index, recommendation, radioName) {
     const savings = recommendation.original.cost - row.estimate.cost;
     const percent = (savings / recommendation.original.cost * 100).toLocaleString('en-US', { maximumFractionDigits: 1 });
     const extra = row.model.id.split(':')[0].slice(recommendation.base.length).replace(/^-/, '');
-    const tags = [PRICE_LABELS[modelType(row.model)], extra, row.estimate.capped ? 'Context cap applied' : ''].filter(Boolean);
+    const tags = [PRICE_LABELS[modelType(row.model)], extra].filter(Boolean);
     return `<label class="lr-recommendation-choice">
         <input type="radio" name="${radioName}" value="${escapeHtml(row.model.id)}"${index === 0 ? ' checked' : ''}>
         <span class="lr-recommendation-model">
