@@ -106,6 +106,8 @@
                         <div class="lr-section-content">
                             <label class="lr-field"><span>Fetch method</span><select class="text_pole" data-lr-setting="transport"><option value="auto">Automatic: helper if installed, otherwise CORS proxy</option><option value="st-proxy">SillyTavern CORS proxy (no server plugin)</option><option value="helper">SillyTavern server helper (optional; quieter logs)</option><option value="direct">Direct (advanced; requires upstream CORS)</option></select></label>
                             <label class="lr-field"><span>Auto refresh interval (seconds)</span><input class="text_pole" type="number" min="30" max="3600" step="1" data-lr-setting="refreshSeconds"></label>
+                            <label class="checkbox_label"><input type="checkbox" data-lr-setting="priceWarnEnabled"> Warn before requests when the selected model's price increases</label>
+                            <p class="lr-muted">Enabled by default. Each detected increase is shown once: in model suggestions when available, otherwise in a cancel-or-continue dialog.</p>
                             <p class="lr-muted">Without server plugins: set enableCorsProxy: true in config.yaml, restart SillyTavern, and use Automatic or SillyTavern CORS proxy. You can leave enableServerPlugins disabled. For quieter logs, optionally copy server/literouter-data.mjs into SillyTavern/plugins/ and enable server plugins instead. See README.md for both setups. Direct mode requires upstream CORS headers.</p>
                         </div>
                     </details>

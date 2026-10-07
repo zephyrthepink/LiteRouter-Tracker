@@ -5,12 +5,14 @@ import { normalizeUsage, recordUsage, assignColor } from './usage.js';
 import { UsageView } from './usage-ui.js';
 import { installRequestTracker } from './request-tracker.js';
 import { installRequestRecommender } from './recommendations.js';
-import { showRecommendations } from './recommendation-ui.js';
+import { showRecommendations, showPriceIncrease } from './recommendation-ui.js';
+import { normalizePriceHistory, updatePriceHistory, acknowledgePriceIncrease } from './price-changes.js';
 
 const MODULE = 'literouter';
 const context = () => SillyTavern.getContext();
 let settings, settingsRoot, connectionRoot, connectionPicker, comparisonPicker, live, usageView;
 let active = false, tokens = null, loading = false, lastRefresh = 0, lastSignature = '', chartTokens = null;
+let refreshPromise = null;
 
 function pricing() { return live.entries.pricing?.data; }
 function plan() { return pricing()?.plans.find(p => p.name === settings.plan) ?? pricing()?.plans[0]; }
@@ -157,12 +159,18 @@ function render() {
     usageView?.render();
 }
 
-async function refresh() {
-    if (loading) return live.inflight;
+function refresh() {
+    if (refreshPromise) return refreshPromise;
     loading = true;
     renderLiveMessage();
-    try { await live.refresh(settings); }
-    finally { loading = false; lastRefresh = Date.now(); render(); }
+    refreshPromise = (async () => {
+        try {
+            await live.refresh(settings);
+            if (live.entries.pricing?.data && !live.entries.pricing.stale
+                && updatePriceHistory(settings.priceHistory, live.entries.pricing.data.models, settings.priceWarnEnabled)) persist();
+        } finally { loading = false; lastRefresh = Date.now(); refreshPromise = null; render(); }
+    })();
+    return refreshPromise;
 }
 
 function selectConnectionModel(id) {
@@ -223,6 +231,9 @@ function loadSettings() {
     delete value.trackUsage;
     delete value.proxyPrefix;
     value.recommendEnabled = Boolean(value.recommendEnabled);
+    value.priceWarnEnabled = value.priceWarnEnabled !== false;
+    value.priceHistory = normalizePriceHistory(value.priceHistory);
+    if (!value.priceWarnEnabled) value.priceHistory.pending = {};
     value.applyRecommended = Boolean(value.applyRecommended);
     if (!['suggest', 'automatic'].includes(value.recommendMode)) value.recommendMode = 'suggest';
     value.usage = normalizeUsage(value.usage);
@@ -236,6 +247,10 @@ async function initialize() {
     if (settingsRoot) return;
     settings = loadSettings();
     live = new LiveData();
+    // On upgrade, the existing browser pricing cache supplies the first baseline.
+    if (!Object.keys(settings.priceHistory.prices).length && live.entries.pricing?.data) {
+        if (updatePriceHistory(settings.priceHistory, live.entries.pricing.data.models, false)) persist();
+    }
     // Derive the installed folder, supporting renamed repositories and per-user installs.
     const folder = new URL('.', import.meta.url).pathname.split('/extensions/')[1]?.replace(/\/$/, '');
     if (!folder) throw new Error('LiteRouter must be installed as a SillyTavern third-party extension');
@@ -257,6 +272,7 @@ async function initialize() {
                 }
             }
             settings[key] = value;
+            if (key === 'priceWarnEnabled' && !value) settings.priceHistory.pending = {};
             if (key === 'plan') { settings.credits = null; settingsRoot.querySelector('[data-lr-setting="credits"]').value = ''; }
             if (key === 'hypotheticalTokens') chartTokens = value;
             persist();
@@ -339,7 +355,16 @@ async function initialize() {
             if (!Array.isArray(request.messages) || typeof context().getTokenCountAsync !== 'function') return null;
             return await context().getTokenCountAsync(JSON.stringify(request.messages));
         },
-        choose: (recommendation, signal, request) => showRecommendations(context(), recommendation, signal, request.type),
+        getPriceIncrease: request => {
+            const current = context().chatCompletionSettings;
+            return settings.priceWarnEnabled && current?.custom_model === request.model && current.custom_url === request.custom_url
+                && Object.hasOwn(settings.priceHistory.pending, request.model) ? settings.priceHistory.pending[request.model] : null;
+        },
+        acknowledgePriceIncrease: (request, change) => {
+            if (acknowledgePriceIncrease(settings.priceHistory, request.model, change)) persist();
+        },
+        warnPriceIncrease: (change, signal, request, onShown) => showPriceIncrease(context(), request.model, change, signal, request.type, onShown),
+        choose: (recommendation, signal, request, change, onShown) => showRecommendations(context(), recommendation, signal, request.type, change, onShown),
         apply: (id, request) => {
             const current = context();
             if (isLiteRouterConnection(current) && current.chatCompletionSettings.custom_model === request.model

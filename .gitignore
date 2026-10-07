@@ -4,9 +4,11 @@
 /coverage/
 /playwright-report/
 /test-results/
+/tests/
 *.log
 
 # Local development references
+/reference - delete before push or ignore/
 /SillyTavern/
 /LiteRouter-Calculator/
 /st-extension-example/

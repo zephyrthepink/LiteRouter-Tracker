@@ -10,6 +10,7 @@ export const DEFAULTS = Object.freeze({
     query: '', sort: 'name', transport: 'auto', refreshSeconds: 60,
     usage: { version: 1, days: {} }, modelColors: {},
     recommendEnabled: false, recommendMode: 'suggest', applyRecommended: false,
+    priceWarnEnabled: true, priceHistory: { version: 1, prices: {}, pending: {} },
 });
 export const SORTS = [
     ['name', 'Name A–Z'], ['reqd', 'Most requests/day'], ['requ', 'Fewest requests/day'],

@@ -8,6 +8,7 @@ A SillyTavern extension for LiteRouter connections using **Chat Completion → C
 - **Cost estimates:** see credits per request and requests per day using your chat's **Total Tokens**, selected plan, and Chat Optimization settings.
 - **Simulated comparisons:** compare up to five models using a chat size you choose.
 - **Model recommendations:** suggest cheaper variants of the same base model before sending, or switch automatically. Outaged models are excluded.
+- **Price-increase warnings:** warn once before sending when your selected model's price multiplier rises between pricing refreshes. Suggest mode shows the increase in red inside available recommendations. Otherwise, a separate dialog lets you cancel (the default) or continue, including in Automatic mode. Warnings are enabled by default and can be disabled under **Live data settings**.
 - **Credit tracking:** see requests made, estimated credits spent and remaining, time until reset, and usage history with filters and charts.
 - **Claude/Gemini Pro output tracking:** track their shared daily output limit, calculated as your daily premium credits × 20. Gemini Flash models are excluded; their requests and credit usage are still tracked.
 

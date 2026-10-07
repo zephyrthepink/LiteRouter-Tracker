@@ -43,11 +43,15 @@ export function abortable(promise, signal) {
 }
 
 // Install outside the usage observer so it prices/records the model actually sent.
-export function installRequestRecommender({ target = globalThis, getSettings, refresh, getData, getInputTokens, choose, apply, notify }) {
+export function installRequestRecommender({ target = globalThis, getSettings, refresh, getData, getInputTokens, choose, apply, notify,
+    getPriceIncrease, acknowledgePriceIncrease = () => {}, warnPriceIncrease }) {
     const original = target.fetch;
+    const warningsEnabled = () => getSettings().priceWarnEnabled !== false
+        && typeof getPriceIncrease === 'function' && typeof warnPriceIncrease === 'function';
+    // Serialize held decisions so concurrent requests cannot display the same warning.
+    let decisionQueue = Promise.resolve();
     const wrapped = async function(input, options) {
-        const initial = getSettings();
-        if (!initial.recommendEnabled) return original.call(this, input, options);
+        if (!getSettings().recommendEnabled && !warningsEnabled()) return original.call(this, input, options);
         let data;
         const url = typeof input === 'string' || input instanceof URL ? String(input) : input?.url;
         try {
@@ -56,42 +60,70 @@ export function installRequestRecommender({ target = globalThis, getSettings, re
             const raw = options?.body ?? (typeof input?.clone === 'function' ? await input.clone().text() : null);
             data = typeof raw === 'string' ? JSON.parse(raw) : null;
         } catch { return original.call(this, input, options); }
-        if (!data?.model || !isLiteRouterConnection({ mainApi: 'openai', chatCompletionSettings: { ...data, custom_model: data.model } })) {
+        if (typeof data?.model !== 'string' || !data.model
+            || !isLiteRouterConnection({ mainApi: 'openai', chatCompletionSettings: { ...data, custom_model: data.model } })) {
             return original.call(this, input, options);
         }
         const signal = options?.signal ?? input?.signal;
         throwIfAborted(signal);
-        let recommendation, settings;
+        const preceding = decisionQueue;
+        let release;
+        const unlocked = new Promise(resolve => { release = resolve; });
+        decisionQueue = preceding.then(() => unlocked);
         try {
-            const tokens = await abortable(getInputTokens(data), signal);
-            await abortable(refresh(), signal);
-            settings = structuredClone(getSettings());
-            if (!settings.recommendEnabled) return original.call(this, input, options);
-            const live = getData();
-            if (live.pricing?.stale || live.status?.stale || !live.pricing?.data || !live.status?.data) {
-                notify('Recommendation skipped: live pricing or status is unavailable. Using your selected model.', 'warning');
-            } else recommendation = recommendModels({ modelId: data.model, inputTokens: tokens, pricing: live.pricing.data, status: live.status.data, settings });
-        } catch (error) {
+            await abortable(preceding, signal);
+            if (!getSettings().recommendEnabled && !warningsEnabled()) return original.call(this, input, options);
+            let recommendation;
+            try {
+                await abortable(refresh(), signal);
+            } catch {
+                throwIfAborted(signal);
+                notify('Live data could not be refreshed before this request.', 'warning');
+            }
+            const settings = structuredClone(getSettings()), live = getData();
+            if (settings.recommendEnabled) {
+                try {
+                    if (live.pricing?.stale || live.status?.stale || !live.pricing?.data || !live.status?.data) {
+                        notify('Recommendation skipped: live pricing or status is unavailable. Using your selected model.', 'warning');
+                    } else {
+                        const tokens = await abortable(getInputTokens(data), signal);
+                        recommendation = recommendModels({ modelId: data.model, inputTokens: tokens,
+                            pricing: live.pricing.data, status: live.status.data, settings });
+                    }
+                } catch {
+                    throwIfAborted(signal);
+                    notify('Recommendation skipped: request pricing could not be checked. Using your selected model.', 'warning');
+                }
+            }
             throwIfAborted(signal);
-            notify('Recommendation skipped: request pricing could not be checked. Using your selected model.', 'warning');
-        }
-        throwIfAborted(signal);
-        if (!recommendation?.choices.length) return original.call(this, input, options);
-        const selected = settings.recommendMode === 'automatic' ? recommendation.choices[0].model.id
-            : await abortable(choose(recommendation, signal, data), signal);
-        throwIfAborted(signal);
-        // Validate modal output against this request's captured recommendations.
-        if (!selected || !getSettings().recommendEnabled || !recommendation.choices.some(row => row.model.id === selected)) {
-            return original.call(this, input, options);
-        }
-        const body = JSON.stringify({ ...data, model: selected });
-        let outgoing = input, init;
-        if (typeof input?.clone === 'function') {
-            outgoing = new Request(input, { ...options, body });
-        } else init = { ...options, body };
-        if (settings.applyRecommended) apply(selected, data);
-        if (settings.recommendMode === 'automatic') notify(`LiteRouter model changed: ${data.model} → ${selected}`, 'info');
-        return original.call(this, outgoing, init);
+            const change = warningsEnabled() ? getPriceIncrease(data) : null;
+            const onShown = () => { if (change) acknowledgePriceIncrease(data, change); };
+            const suggest = getSettings().recommendEnabled && settings.recommendMode === 'suggest' && recommendation?.choices.length;
+            let selected;
+            if (suggest) {
+                selected = await abortable(choose(recommendation, signal, data, change, onShown), signal);
+            } else {
+                if (change && !await abortable(warnPriceIncrease(change, signal, data, onShown), signal)) {
+                    throw new DOMException('Request cancelled after a model price increase', 'AbortError');
+                }
+                if (getSettings().recommendEnabled && settings.recommendMode === 'automatic' && recommendation?.choices.length) {
+                    selected = recommendation.choices[0].model.id;
+                }
+            }
+            throwIfAborted(signal);
+            // Validate modal output against this request's captured recommendations.
+            if (!selected || !getSettings().recommendEnabled || !recommendation?.choices.some(row => row.model.id === selected)) {
+                return original.call(this, input, options);
+            }
+            const body = JSON.stringify({ ...data, model: selected });
+            let outgoing = input, init;
+            if (typeof input?.clone === 'function') {
+                outgoing = new Request(input, { ...options, body });
+            } else init = { ...options, body };
+            if (settings.applyRecommended) apply(selected, data);
+            if (settings.recommendMode === 'automatic') notify(`LiteRouter model changed: ${data.model} → ${selected}`, 'info');
+            return original.call(this, outgoing, init);
+        } finally { release(); }
     };
     target.fetch = wrapped;
     return () => { if (target.fetch === wrapped) target.fetch = original; };

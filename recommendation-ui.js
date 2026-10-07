@@ -5,6 +5,63 @@ const PRICE_LABELS = { free: 'Free', metered: 'Metered', 'metered-full-context':
 const creditLabel = (cost, pool) => `${pool} credit${cost === 1 ? '' : 's'}`;
 let recommendationSequence = 0;
 
+function priceIncreaseMarkup(change) {
+    const price = value => Number(value).toLocaleString('en-US', { maximumFractionDigits: 20 });
+    return `<div class="lr-price-increase" role="alert"><b><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Model price increased</b>
+        <p>Price multiplier increased from <strong>×${price(change.from)}</strong> to <strong>×${price(change.to)}</strong>.</p>
+        <small>Request credits depend on your chat size. Cancelling this request is recommended.</small></div>`;
+}
+
+function cancelRequest(context, requestType) {
+    try {
+        // Quiet/background requests must not stop an unrelated foreground chat.
+        if (['normal', 'swipe', 'continue', 'regenerate', 'impersonate'].includes(requestType)) context.stopGeneration?.();
+    } finally {
+        throw new DOMException('Request cancelled from LiteRouter', 'AbortError');
+    }
+}
+
+function throwIfAborted(signal) {
+    if (signal?.aborted) throw signal.reason ?? new DOMException('Request aborted', 'AbortError');
+}
+
+function shownOnce(callback) {
+    let shown = false;
+    return () => { if (!shown) { shown = true; callback?.(); } };
+}
+
+async function showPopup(popup, signal, cancelledResult) {
+    const cancelled = () => { void popup.complete(cancelledResult); };
+    signal?.addEventListener('abort', cancelled, { once: true });
+    try {
+        const result = await popup.show();
+        throwIfAborted(signal);
+        return result;
+    } finally { signal?.removeEventListener('abort', cancelled); }
+}
+
+export async function showPriceIncrease(context, model, change, signal, requestType, onShown) {
+    throwIfAborted(signal);
+    const { Popup, POPUP_TYPE, POPUP_RESULT } = context;
+    if (!Popup || !POPUP_TYPE || !POPUP_RESULT) {
+        globalThis.toastr?.warning('Model price increased. Update SillyTavern to review price warnings. Request cancelled.', 'LiteRouter');
+        cancelRequest(context, requestType);
+    }
+    const content = document.createElement('div');
+    content.className = 'lr-root lr-recommendations';
+    content.innerHTML = `<div class="lr-recommendation-header"><div><span class="lr-recommendation-eyebrow">Selected model</span><h3>${escapeHtml(model)}</h3></div></div>${priceIncreaseMarkup(change)}`;
+    const markShown = shownOnce(onShown);
+    const popup = new Popup(content, POPUP_TYPE.CONFIRM, '', {
+        wide: true, okButton: 'Continue (not recommended)', cancelButton: 'Cancel request (recommended)',
+        defaultResult: POPUP_RESULT.NEGATIVE, onOpen: markShown, onClose: markShown,
+    });
+    popup.dlg.classList.add('lr-recommendation-popup', 'lr-price-increase-popup');
+    popup.cancelButton.classList.add('lr-cancel-request');
+    const result = await showPopup(popup, signal, POPUP_RESULT.CANCELLED);
+    if (result !== POPUP_RESULT.AFFIRMATIVE) cancelRequest(context, requestType);
+    return true;
+}
+
 function recommendationCard(row, index, recommendation, radioName) {
     const savings = recommendation.original.cost - row.estimate.cost;
     const percent = (savings / recommendation.original.cost * 100).toLocaleString('en-US', { maximumFractionDigits: 1 });
@@ -25,9 +82,11 @@ function recommendationCard(row, index, recommendation, radioName) {
     </label>`;
 }
 
-export async function showRecommendations(context, recommendation, signal, requestType) {
+export async function showRecommendations(context, recommendation, signal, requestType, priceIncrease = null, onShown) {
+    throwIfAborted(signal);
     const { Popup, POPUP_TYPE, POPUP_RESULT } = context;
     if (!Popup || !POPUP_TYPE || !POPUP_RESULT) {
+        if (priceIncrease) await showPriceIncrease(context, recommendation.current.id, priceIncrease, signal, requestType, onShown);
         globalThis.toastr?.warning('Update SillyTavern to use its native recommendation modal. Keeping your selected model.', 'LiteRouter');
         return null;
     }
@@ -36,32 +95,31 @@ export async function showRecommendations(context, recommendation, signal, reque
     // Separate radio groups keep concurrent native popups' selections independent.
     const radioName = `lr-recommendation-${++recommendationSequence}`;
     content.innerHTML = `<div class="lr-recommendation-header"><div><span class="lr-recommendation-eyebrow">Model recommendations</span><h3>${escapeHtml(recommendation.base)}</h3></div><span class="lr-recommendation-tokens">${fmt(recommendation.inputTokens)} input tokens</span></div>
+        ${priceIncrease ? priceIncreaseMarkup(priceIncrease) : ''}
         <div class="lr-recommendation-current"><div><span class="lr-recommendation-caption">Selected model</span><b>${escapeHtml(recommendation.current.id)}</b></div><div class="lr-recommendation-current-price"><strong>${fmt(recommendation.original.cost)}</strong><span>${creditLabel(recommendation.original.cost, recommendation.pool)}</span></div></div>
         <div class="lr-recommendation-list-heading"><b>Lower-cost options</b><span class="lr-muted">${recommendation.choices.length} available · Estimated per request</span></div>
         <div class="lr-recommendation-list" role="radiogroup" aria-label="Suggested models">${recommendation.choices.map((row, index) => recommendationCard(row, index, recommendation, radioName)).join('')}</div>`;
     const cancelResult = POPUP_RESULT.CUSTOM1 ?? 1001;
+    const markShown = shownOnce(onShown);
     const popup = new Popup(content, POPUP_TYPE.CONFIRM, '', {
-        wide: true, okButton: 'Use selected model', cancelButton: 'Keep original model',
-        customButtons: [{ text: 'Cancel request', result: cancelResult, classes: ['lr-cancel-request'], appendAtEnd: true,
+        wide: true, okButton: 'Use selected model', cancelButton: priceIncrease ? 'Keep original model (not recommended)' : 'Keep original model',
+        defaultResult: priceIncrease ? cancelResult : POPUP_RESULT.AFFIRMATIVE,
+        onOpen: markShown, onClose: markShown,
+        customButtons: [{ text: priceIncrease ? 'Cancel request (recommended)' : 'Cancel request', result: cancelResult, classes: ['lr-cancel-request'], appendAtEnd: true,
             tooltip: 'Stop this request without sending it to LiteRouter' }],
     });
     popup.dlg.classList.add('lr-recommendation-popup');
-    const cancelled = () => { void popup.complete(POPUP_RESULT.CANCELLED); };
-    signal?.addEventListener('abort', cancelled, { once: true });
-    try {
-        if (signal?.aborted) return null;
-        const result = await popup.show();
-        signal?.removeEventListener('abort', cancelled);
-        if (result === cancelResult) {
-            // Use Prompt Inspector's native stop hook for foreground generations.
-            // Quiet/background requests must not stop an unrelated active chat.
-            try {
-                if (['normal', 'swipe', 'continue', 'regenerate', 'impersonate'].includes(requestType)) context.stopGeneration?.();
-            } finally {
-                // Reject this held fetch before model changes or the usage observer run.
-                throw new DOMException('Request cancelled from model recommendations', 'AbortError');
-            }
-        }
-        return result === POPUP_RESULT.AFFIRMATIVE ? content.querySelector('input:checked')?.value : null;
-    } finally { signal?.removeEventListener('abort', cancelled); }
+    if (priceIncrease) {
+        // The native close icon normally returns NEGATIVE (keep the original).
+        // A warning may continue at the higher price only through an explicit choice.
+        popup.closeButton.addEventListener('click', event => {
+            event.stopImmediatePropagation();
+            void popup.complete(cancelResult);
+        }, { capture: true });
+    }
+    const result = await showPopup(popup, signal, POPUP_RESULT.CANCELLED);
+    if (result === cancelResult || priceIncrease && result !== POPUP_RESULT.AFFIRMATIVE && result !== POPUP_RESULT.NEGATIVE) {
+        cancelRequest(context, requestType);
+    }
+    return result === POPUP_RESULT.AFFIRMATIVE ? content.querySelector('input:checked')?.value : null;
 }
