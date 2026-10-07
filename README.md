@@ -4,7 +4,7 @@ A SillyTavern extension for LiteRouter connections using **Chat Completion → C
 
 ## Features
 
-- **Better model search:** browse live models in Connection Profiles, filter with booru tags, and sort by price, status, speed, or requests per day.
+- **Better model search:** browse live models in Connection Profiles, filter with booru tags, and sort by price, status, speed, or requests per day. Models refresh automatically when you open API Connections or expand the LiteRouter model browser.
 - **Cost estimates:** see credits per request and requests per day using your chat's **Total Tokens**, selected plan, and Chat Optimization settings.
 - **Simulated comparisons:** compare up to five models using a chat size you choose.
 - **Model recommendations:** suggest cheaper variants of the same base model before sending, or switch automatically. Outaged models are excluded.

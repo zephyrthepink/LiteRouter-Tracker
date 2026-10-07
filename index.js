@@ -305,7 +305,7 @@ async function initialize() {
     anchor.after(connectionRoot);
     connectionRoot.querySelector('.lr-refresh').addEventListener('click', () => void refresh());
     connectionRoot.querySelector('.lr-picker-panel').addEventListener('toggle', event => {
-        if (event.target.open) { connectionPicker.update(); if (!pricing()) void refresh(); connectionPicker.input.focus(); }
+        if (event.target.open) { connectionPicker.update(); void refresh(); connectionPicker.input.focus(); }
     });
     connectionPicker = new ModelPicker(connectionRoot.querySelector('.lr-connection-search'), {
         getData: () => pickerData(), select: selectConnectionModel, query: settings.query, sort: settings.sort,
@@ -382,6 +382,18 @@ async function initialize() {
     }
     const tokenContainer = document.getElementById('completion_prompt_manager');
     if (tokenContainer) new MutationObserver(sync).observe(tokenContainer, { childList: true, subtree: true, characterData: true });
+    // Connection Profiles lives in the API Connections drawer. Observe its actual
+    // open state so mouse, keyboard, and programmatic opens all fetch fresh models.
+    const connectionPanel = document.getElementById('rm_api_block');
+    if (connectionPanel) {
+        let wasOpen = connectionPanel.classList.contains('openDrawer');
+        new MutationObserver(() => {
+            const isOpen = connectionPanel.classList.contains('openDrawer');
+            const opened = isOpen && !wasOpen;
+            wasOpen = isOpen;
+            if (opened) { sync(); void refresh(); }
+        }).observe(connectionPanel, { attributes: true, attributeFilter: ['class'] });
+    }
     // Also detect programmatic endpoint/profile changes which do not dispatch DOM events.
     setInterval(sync, 1500);
     document.addEventListener('visibilitychange', sync);
