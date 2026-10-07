@@ -2,66 +2,115 @@
     <div class="inline-drawer">
         <div class="inline-drawer-toggle inline-drawer-header"><b>LiteRouter Tracker</b><div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div></div>
         <div class="inline-drawer-content">
-            <label class="checkbox_label"><input type="checkbox" data-lr-setting="enabled"> Enable LiteRouter model picker in API Connections</label>
-            <p class="lr-data-error lr-live-error" hidden aria-live="polite"></p>
-            <p class="lr-proxy-warning lr-muted" hidden>Warning: SillyTavern's built-in CORS proxy may print “Streaming request finished” while fetching model/status JSON. These misleading messages do not indicate chat generation or credit spending. The optional server helper avoids them.</p>
-            <details class="lr-settings-section lr-plan-section"><summary>Plan and Chat Optimization</summary>
-            <h4>Your plan</h4>
-            <div class="lr-grid">
-                <label>Plan<select class="text_pole" data-lr-setting="plan" aria-label="LiteRouter plan"></select></label>
-                <label>Premium credits/day override<input class="text_pole" type="number" min="0" step="1" data-lr-setting="credits" placeholder="Use plan allowance"></label>
-            </div>
-            <p class="lr-plan-warning lr-live-error" hidden></p>
-            <h4>Chat Optimization</h4>
-            <div class="lr-grid">
-                <label>General · System ×1,250<input class="text_pole" type="number" min="1" step="1" data-lr-setting="generalSystem"></label>
-                <label>General · Conversation ×3,750<input class="text_pole" type="number" min="1" step="1" data-lr-setting="generalConversation"></label>
-                <label>Claude · System ×1,250<input class="text_pole" type="number" min="1" step="1" data-lr-setting="claudeSystem"></label>
-                <label>Claude · Conversation ×3,750<input class="text_pole" type="number" min="1" step="1" data-lr-setting="claudeConversation"></label>
-            </div>
-            <p class="lr-window-info lr-muted"></p>
-            </details>
-            <details class="lr-settings-section lr-simulation-section"><summary>Simulated Comparison</summary>
-            <label class="lr-hypothetical-input">Input tokens per request<input class="text_pole" type="number" min="0" max="2000000" step="1" data-lr-setting="hypotheticalTokens"></label>
-            <div class="lr-compared" aria-label="Compared models"></div>
-            <details class="lr-comparison-picker"><summary>Add models to compare (maximum 5)</summary><div class="lr-compare-search"></div></details>
-            <div class="lr-comparison-content"></div>
-            <div class="lr-toolbar lr-comparison-actions"><button type="button" class="menu_button lr-refresh">Refresh live data</button></div>
-            </details>
-            <details class="lr-settings-section lr-usage"><summary>Credit usage</summary>
-                <p class="lr-usage-day lr-muted"></p>
-                <dl class="lr-usage-today lr-usage-stats" title="Local estimates from observed requests. Account balances and activity in other apps are not synced." aria-live="polite"></dl>
-                <p class="lr-usage-notes lr-live-error" hidden></p>
-                <details class="lr-usage-filters"><summary>Filters</summary>
-                <div class="lr-grid">
-                    <label>Usage period<select class="text_pole lr-usage-period"><option value="today">Today</option><option value="week" selected>This week (Mon–Sun)</option><option value="month">This month</option><option value="all">All time</option><option value="custom">Custom date range</option></select></label>
-                    <div class="lr-usage-tag-search"><label>Search usage<input class="text_pole lr-search lr-usage-search" type="search" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="claude provider:deepseek -type:free" aria-label="Search model usage"></label>
-                        <div class="lr-suggestions" role="group" aria-label="Usage tag suggestions" hidden></div>
-                        <div class="lr-pills" aria-label="Active usage tags"></div>
-                        <details class="lr-tag-browser"><summary>Browse tags</summary><label class="checkbox_label"><input type="checkbox" class="lr-exclude-mode"> Add exclusion tags</label><div class="lr-all-tags"></div></details>
-                    </div>
+            <div class="lr-settings-body">
+                <div class="lr-settings-overview">
+                    <label class="checkbox_label"><input type="checkbox" data-lr-setting="enabled"> <span>Enable LiteRouter model picker in API Connections</span></label>
+                    <span class="lr-status-badge" aria-live="polite"></span>
                 </div>
-                <div class="lr-grid lr-usage-dates" hidden><label>From (GMT+7)<input class="text_pole lr-usage-start" type="date"></label><label>Through (GMT+7)<input class="text_pole lr-usage-end" type="date"></label></div>
-                <p class="lr-muted">Search model names or tags: model:, provider:, type:, date:YYYY-MM-DD, credits:&gt;=10, requests:1..20, is:partial, is:unpriced. Prefix − to exclude.</p>
-                <p class="lr-usage-filter-summary lr-muted" aria-live="polite"></p>
-                <div class="lr-toolbar"><button type="button" class="menu_button lr-usage-reset-filters">Reset usage filters</button></div>
-                </details>
-                <div class="lr-toolbar"><button type="button" class="menu_button lr-usage-colors">Model colors…</button></div>
-                <div class="lr-usage-chart" aria-label="Stacked daily credit usage by model"></div>
-                <div class="lr-usage-legend" aria-label="Model color legend"></div>
-                <div class="lr-usage-table-wrap"><table class="lr-usage-table"></table></div>
-            </details>
-            <details class="lr-settings-section lr-recommend-settings"><summary>Recommend models</summary>
-                <label class="checkbox_label"><input type="checkbox" data-lr-setting="recommendEnabled"> Enable model recommendations before requests</label>
-                <label>Mode<select class="text_pole" data-lr-setting="recommendMode"><option value="suggest">Suggest</option><option value="automatic">Automatic</option></select></label>
-                <label class="checkbox_label"><input type="checkbox" data-lr-setting="applyRecommended"> Apply recommended model to Connection Profiles</label>
-                <p class="lr-muted">Cheaper models with the same base name. Outages are excluded; degraded models remain eligible. When Apply is off, changes affect only the current request.</p>
-            </details>
-            <details class="lr-settings-section lr-data-settings"><summary>Live data settings</summary>
-                <label>Fetch method<select class="text_pole" data-lr-setting="transport"><option value="auto">Automatic: helper if installed, otherwise CORS proxy</option><option value="st-proxy">SillyTavern CORS proxy (no server plugin)</option><option value="helper">SillyTavern server helper (optional; quieter logs)</option><option value="direct">Direct (advanced; requires upstream CORS)</option></select></label>
-                <label>Auto refresh interval (seconds)<input class="text_pole" type="number" min="30" max="3600" step="1" data-lr-setting="refreshSeconds"></label>
-                <p class="lr-muted">Without server plugins: set enableCorsProxy: true in config.yaml, restart SillyTavern, and use Automatic or SillyTavern CORS proxy. You can leave enableServerPlugins disabled. For quieter logs, optionally copy server/literouter-data.mjs into SillyTavern/plugins/ and enable server plugins instead. See README.md for both setups. Direct mode requires upstream CORS headers.</p>
-            </details>
+                <p class="lr-data-error lr-live-error" hidden aria-live="polite"></p>
+                <p class="lr-proxy-warning lr-muted" hidden>Warning: SillyTavern's built-in CORS proxy may print “Streaming request finished” while fetching model/status JSON. These misleading messages do not indicate chat generation or credit spending. The optional server helper avoids them.</p>
+                <section class="lr-settings-group" aria-label="Plan and comparison">
+                    <h4 class="lr-settings-group-heading">Plan &amp; comparison</h4>
+                    <details class="lr-settings-section lr-plan-section">
+                        <summary>
+                            <span class="lr-section-icon" aria-hidden="true"><i class="fa-solid fa-sliders"></i></span>
+                            <span class="lr-section-heading"><b>Plan and Chat Optimization</b><small class="lr-section-description">Plan allowance and context optimization windows</small></span>
+                            <i class="fa-solid fa-chevron-right lr-section-chevron" aria-hidden="true"></i>
+                        </summary>
+                        <div class="lr-section-content">
+                            <h4>Your plan</h4>
+                            <div class="lr-grid">
+                                <label class="lr-field"><span>Plan</span><select class="text_pole" data-lr-setting="plan" aria-label="LiteRouter plan"></select></label>
+                                <label class="lr-field"><span>Premium credits/day override</span><input class="text_pole" type="number" min="0" step="1" data-lr-setting="credits" placeholder="Use plan allowance"></label>
+                            </div>
+                            <p class="lr-plan-warning lr-live-error" hidden></p>
+                            <h4>Chat Optimization</h4>
+                            <div class="lr-grid">
+                                <label class="lr-field"><span>General · System ×1,250</span><input class="text_pole" type="number" min="1" step="1" data-lr-setting="generalSystem"></label>
+                                <label class="lr-field"><span>General · Conversation ×3,750</span><input class="text_pole" type="number" min="1" step="1" data-lr-setting="generalConversation"></label>
+                                <label class="lr-field"><span>Claude · System ×1,250</span><input class="text_pole" type="number" min="1" step="1" data-lr-setting="claudeSystem"></label>
+                                <label class="lr-field"><span>Claude · Conversation ×3,750</span><input class="text_pole" type="number" min="1" step="1" data-lr-setting="claudeConversation"></label>
+                            </div>
+                            <p class="lr-window-info lr-muted"></p>
+                        </div>
+                    </details>
+                    <details class="lr-settings-section lr-simulation-section">
+                        <summary>
+                            <span class="lr-section-icon" aria-hidden="true"><i class="fa-solid fa-scale-balanced"></i></span>
+                            <span class="lr-section-heading"><b>Simulated Comparison</b><small class="lr-section-description">Compare up to five models at your chosen chat size</small></span>
+                            <i class="fa-solid fa-chevron-right lr-section-chevron" aria-hidden="true"></i>
+                        </summary>
+                        <div class="lr-section-content">
+                            <label class="lr-field lr-hypothetical-input"><span>Input tokens per request</span><input class="text_pole" type="number" min="0" max="2000000" step="1" data-lr-setting="hypotheticalTokens"></label>
+                            <div class="lr-compared" aria-label="Compared models"></div>
+                            <details class="lr-comparison-picker"><summary>Add models to compare (maximum 5)</summary><div class="lr-compare-search"></div></details>
+                            <div class="lr-comparison-content"></div>
+                            <div class="lr-toolbar lr-comparison-actions"><button type="button" class="menu_button lr-refresh">Refresh live data</button></div>
+                        </div>
+                    </details>
+                </section>
+                <section class="lr-settings-group" aria-label="Usage and recommendations">
+                    <h4 class="lr-settings-group-heading">Usage &amp; recommendations</h4>
+                    <details class="lr-settings-section lr-usage">
+                        <summary>
+                            <span class="lr-section-icon" aria-hidden="true"><i class="fa-solid fa-chart-column"></i></span>
+                            <span class="lr-section-heading"><b>Credit usage</b><small class="lr-section-description">Daily allowances, output tokens, and usage history</small></span>
+                            <i class="fa-solid fa-chevron-right lr-section-chevron" aria-hidden="true"></i>
+                        </summary>
+                        <div class="lr-section-content">
+                            <p class="lr-usage-day lr-muted"></p>
+                            <dl class="lr-usage-today lr-usage-stats" title="Local estimates from observed requests. Account balances and activity in other apps are not synced." aria-live="polite"></dl>
+                            <p class="lr-usage-notes lr-live-error" hidden></p>
+                            <details class="lr-usage-filters"><summary>Filters</summary>
+                                <div class="lr-grid">
+                                    <label class="lr-field"><span>Usage period</span><select class="text_pole lr-usage-period"><option value="today">Today</option><option value="week" selected>This week (Mon–Sun)</option><option value="month">This month</option><option value="all">All time</option><option value="custom">Custom date range</option></select></label>
+                                    <div class="lr-usage-tag-search"><label class="lr-field"><span>Search usage</span><input class="text_pole lr-search lr-usage-search" type="search" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="claude provider:deepseek -type:free" aria-label="Search model usage"></label>
+                                        <div class="lr-suggestions" role="group" aria-label="Usage tag suggestions" hidden></div>
+                                        <div class="lr-pills" aria-label="Active usage tags"></div>
+                                        <details class="lr-tag-browser"><summary>Browse tags</summary><label class="checkbox_label"><input type="checkbox" class="lr-exclude-mode"> Add exclusion tags</label><div class="lr-all-tags"></div></details>
+                                    </div>
+                                </div>
+                                <div class="lr-grid lr-usage-dates" hidden><label class="lr-field"><span>From (GMT+7)</span><input class="text_pole lr-usage-start" type="date"></label><label class="lr-field"><span>Through (GMT+7)</span><input class="text_pole lr-usage-end" type="date"></label></div>
+                                <p class="lr-muted">Search model names or tags: model:, provider:, type:, date:YYYY-MM-DD, credits:&gt;=10, requests:1..20, is:partial, is:unpriced. Prefix − to exclude.</p>
+                                <p class="lr-usage-filter-summary lr-muted" aria-live="polite"></p>
+                                <div class="lr-toolbar"><button type="button" class="menu_button lr-usage-reset-filters">Reset usage filters</button></div>
+                            </details>
+                            <div class="lr-toolbar"><button type="button" class="menu_button lr-usage-colors">Model colors…</button></div>
+                            <div class="lr-usage-chart" aria-label="Stacked daily credit usage by model"></div>
+                            <div class="lr-usage-legend" aria-label="Model color legend"></div>
+                            <div class="lr-usage-table-wrap"><table class="lr-usage-table"></table></div>
+                        </div>
+                    </details>
+                    <details class="lr-settings-section lr-recommend-settings">
+                        <summary>
+                            <span class="lr-section-icon" aria-hidden="true"><i class="fa-solid fa-wand-magic-sparkles"></i></span>
+                            <span class="lr-section-heading"><b>Recommend models</b><small class="lr-section-description">Find cheaper variants before sending a request</small></span>
+                            <i class="fa-solid fa-chevron-right lr-section-chevron" aria-hidden="true"></i>
+                        </summary>
+                        <div class="lr-section-content">
+                            <label class="checkbox_label"><input type="checkbox" data-lr-setting="recommendEnabled"> Enable model recommendations before requests</label>
+                            <label class="lr-field"><span>Mode</span><select class="text_pole" data-lr-setting="recommendMode"><option value="suggest">Suggest</option><option value="automatic">Automatic</option></select></label>
+                            <label class="checkbox_label"><input type="checkbox" data-lr-setting="applyRecommended"> Apply recommended model to Connection Profiles</label>
+                            <p class="lr-muted">Cheaper models with the same base name. Outages are excluded; degraded models remain eligible. When Apply is off, changes affect only the current request.</p>
+                        </div>
+                    </details>
+                </section>
+                <section class="lr-settings-group" aria-label="Connection and data">
+                    <h4 class="lr-settings-group-heading">Connection &amp; data</h4>
+                    <details class="lr-settings-section lr-data-settings">
+                        <summary>
+                            <span class="lr-section-icon" aria-hidden="true"><i class="fa-solid fa-arrows-rotate"></i></span>
+                            <span class="lr-section-heading"><b>Live data settings</b><small class="lr-section-description">Fetch method and automatic refresh interval</small></span>
+                            <i class="fa-solid fa-chevron-right lr-section-chevron" aria-hidden="true"></i>
+                        </summary>
+                        <div class="lr-section-content">
+                            <label class="lr-field"><span>Fetch method</span><select class="text_pole" data-lr-setting="transport"><option value="auto">Automatic: helper if installed, otherwise CORS proxy</option><option value="st-proxy">SillyTavern CORS proxy (no server plugin)</option><option value="helper">SillyTavern server helper (optional; quieter logs)</option><option value="direct">Direct (advanced; requires upstream CORS)</option></select></label>
+                            <label class="lr-field"><span>Auto refresh interval (seconds)</span><input class="text_pole" type="number" min="30" max="3600" step="1" data-lr-setting="refreshSeconds"></label>
+                            <p class="lr-muted">Without server plugins: set enableCorsProxy: true in config.yaml, restart SillyTavern, and use Automatic or SillyTavern CORS proxy. You can leave enableServerPlugins disabled. For quieter logs, optionally copy server/literouter-data.mjs into SillyTavern/plugins/ and enable server plugins instead. See README.md for both setups. Direct mode requires upstream CORS headers.</p>
+                        </div>
+                    </details>
+                </section>
+            </div>
         </div>
     </div>
 </div>

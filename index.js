@@ -146,6 +146,9 @@ function renderBars(models) {
 }
 
 function render() {
+    const badge = settingsRoot.querySelector('.lr-status-badge');
+    badge.textContent = settings.enabled ? 'Enabled' : 'Disabled';
+    badge.classList.toggle('lr-active', settings.enabled);
     renderLiveMessage();
     renderPlan();
     renderConnection();
@@ -271,7 +274,16 @@ async function initialize() {
     connectionRoot.id = 'literouter_connection';
     connectionRoot.className = 'lr-root';
     connectionRoot.hidden = true;
-    connectionRoot.innerHTML = '<p class="lr-current-model" aria-live="polite"></p><details class="lr-picker-panel"><summary>Browse LiteRouter models</summary><p class="lr-live-message lr-muted" aria-live="polite"></p><p class="lr-proxy-warning lr-muted" hidden>Warning: SillyTavern’s built-in CORS proxy may print “Streaming request finished” while fetching model/status JSON. These misleading messages do not indicate chat generation or credit spending. The optional server helper avoids them.</p><div class="lr-connection-search"></div><div class="lr-toolbar lr-picker-footer"><button type="button" class="menu_button lr-refresh">Refresh live data</button></div></details>';
+    connectionRoot.innerHTML = `<p class="lr-current-model" aria-live="polite"></p>
+        <details class="lr-picker-panel">
+            <summary><span class="lr-section-icon" aria-hidden="true"><i class="fa-solid fa-magnifying-glass"></i></span><span class="lr-section-heading"><b>Browse LiteRouter models</b><small class="lr-section-description">Search, filter, and compare live model costs</small></span><i class="fa-solid fa-chevron-right lr-section-chevron" aria-hidden="true"></i></summary>
+            <div class="lr-section-content">
+                <p class="lr-live-message lr-muted" aria-live="polite"></p>
+                <p class="lr-proxy-warning lr-muted" hidden>Warning: SillyTavern’s built-in CORS proxy may print “Streaming request finished” while fetching model/status JSON. These misleading messages do not indicate chat generation or credit spending. The optional server helper avoids them.</p>
+                <div class="lr-connection-search"></div>
+                <div class="lr-toolbar lr-picker-footer"><button type="button" class="menu_button lr-refresh">Refresh live data</button></div>
+            </div>
+        </details>`;
     const anchor = document.getElementById('model_custom_select')?.parentElement;
     if (!anchor) throw new Error('LiteRouter: native Custom model selector was not found');
     anchor.after(connectionRoot);

@@ -9,7 +9,7 @@ A SillyTavern extension for LiteRouter connections using **Chat Completion → C
 - **Simulated comparisons:** compare up to five models using a chat size you choose.
 - **Model recommendations:** suggest cheaper variants of the same base model before sending, or switch automatically. Outaged models are excluded.
 - **Credit tracking:** see requests made, estimated credits spent and remaining, time until reset, and usage history with filters and charts.
-- **Claude/Gemini output tracking:** track their shared daily output limit, calculated as your daily premium credits × 20.
+- **Claude/Gemini Pro output tracking:** track their shared daily output limit, calculated as your daily premium credits × 20. Gemini Flash models are excluded; their requests and credit usage are still tracked.
 
 Set your plan and Chat Optimization values in the extension settings to match your LiteRouter dashboard. Tracking covers requests made through SillyTavern while the extension is active; estimates do not sync with your account balance or other apps.
 

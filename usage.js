@@ -20,7 +20,12 @@ export function dateRange(period, time = Date.now(), start = '', end = '') {
     return { start: date.toISOString().slice(0, 10), end: today };
 }
 export const emptyUsage = () => ({ version: 1, days: {} });
-export const isSharedOutputModel = model => ['claude', 'gemini'].includes(provider(model));
+export function isSharedOutputModel(model) {
+    const family = provider(model), name = baseModel(model).toLowerCase();
+    // Colon pricing variants and hyphenated extras keep the base model's quota.
+    return family === 'claude' || family === 'gemini'
+        && /(^|-)pro(?=-|$)/.test(name) && !/(^|-)flash(?=-|$)/.test(name);
+}
 export const sharedOutputLimit = credits => Number.isFinite(credits) && credits >= 0 && Number.isSafeInteger(Math.floor(credits * 20)) ? Math.floor(credits * 20) : null;
 const emptyBucket = () => ({ requests: 0, premium: 0, daily: 0, permanent: 0, unallocated: 0, free: 0, unpriced: 0, partial: 0, inputTokens: 0, apiTokens: 0, stalePrices: 0,
     outputTokens: 0, apiOutputRequests: 0, estimatedOutputRequests: 0, unknownOutputRequests: 0 });

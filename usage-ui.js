@@ -45,12 +45,12 @@ export class UsageView {
             ['reset', 'Reset in', `${hours}h ${minutes}m`, '00:00 GMT+7'],
             ['requests', 'Requests today', fmt(totals.requests), ''],
             ['free-allowance', 'Free allowance', freeAllowance, ''],
-            ['shared-output', 'Claude/Gemini output tokens', outputValue, outputDetail],
+            ['shared-output', 'Claude/Gemini Pro output tokens', outputValue, outputDetail],
             ['premium-spent', 'Premium spent today', fmt(totals.premium), `${fmt(totals.daily)} daily · ${fmt(totals.permanent)} permanent`],
             ['free-spent', 'Free spent today', fmt(totals.free), ''],
             ['permanent-spent', 'Permanent spent · all time', fmt(permanent), ''],
         ];
-        const markup = stats.map(([key, label, value, detail]) => `<div class="lr-usage-stat" data-lr-stat="${key}"${key === 'shared-output' ? ` data-output-state="${outputState}" title="Shared daily allowance = daily premium credits × 20. Includes observed Claude and Gemini requests, all extras and variants. API totals include reasoning tokens; missing usage is estimated or marked unknown."` : ''}><dt>${label}</dt><dd>${escapeHtml(value)}${detail ? `<small>${escapeHtml(detail)}</small>` : ''}</dd>${key === 'shared-output' && outputLimit > 0 ? `<progress class="lr-output-progress" max="${outputLimit}" value="${Math.min(output.outputTokens, outputLimit)}" aria-label="Shared Claude/Gemini output token usage"></progress>` : ''}</div>`).join('');
+        const markup = stats.map(([key, label, value, detail]) => `<div class="lr-usage-stat" data-lr-stat="${key}"${key === 'shared-output' ? ` data-output-state="${outputState}" title="Shared daily allowance = daily premium credits × 20. Includes observed Claude and Gemini Pro requests, all extras and variants. Gemini Flash is excluded. API totals include reasoning tokens; missing usage is estimated or marked unknown."` : ''}><dt>${label}</dt><dd>${escapeHtml(value)}${detail ? `<small>${escapeHtml(detail)}</small>` : ''}</dd>${key === 'shared-output' && outputLimit > 0 ? `<progress class="lr-output-progress" max="${outputLimit}" value="${Math.min(output.outputTokens, outputLimit)}" aria-label="Shared Claude/Gemini Pro output token usage"></progress>` : ''}</div>`).join('');
         const summary = this.root.querySelector('.lr-usage-today');
         if (summary.innerHTML !== markup) summary.innerHTML = markup;
         const notes = this.root.querySelector('.lr-usage-notes');
