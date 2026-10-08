@@ -8,7 +8,7 @@ export function processedPromptMarkup(count) {
     if (count.tools != null) prompt.tools = count.tools;
     if (count.responseFormat != null) prompt.response_format = count.responseFormat;
     return `<p class="lr-muted">${escapeHtml(label)}${count.note ? `<br>${escapeHtml(count.note)}` : ''}</p>
-        ${count.messages != null ? `<pre class="lr-processed-prompt" tabindex="0">${escapeHtml(JSON.stringify(prompt, null, 2))}</pre>` : ''}`;
+        ${count.messages != null ? `<textarea class="text_pole lr-processed-prompt" readonly rows="12" aria-label="Request prompt">${escapeHtml(JSON.stringify(prompt, null, 2))}</textarea>` : ''}`;
 }
 
 export function renderRequestInspector(root, request) {

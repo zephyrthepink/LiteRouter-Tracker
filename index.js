@@ -5,7 +5,7 @@ import { normalizeUsage, recordUsage, assignColor } from './usage.js';
 import { UsageView } from './usage-ui.js';
 import { installRequestTracker } from './request-tracker.js';
 import { installRequestRecommender } from './recommendations.js';
-import { showRecommendations, showPriceIncrease } from './recommendation-ui.js';
+import { showRecommendations, showPriceIncrease, showRequestConfirmation } from './recommendation-ui.js';
 import { normalizePriceHistory, updatePriceHistory, acknowledgePriceIncrease } from './price-changes.js';
 import { createRequestTokenCounter } from './request-tokens.js';
 import { renderRequestInspector } from './request-inspector.js';
@@ -73,12 +73,12 @@ function renderConnection() {
     if (!active) return;
     const row = modelRows(tokens).find(r => r.model.id === context().chatCompletionSettings?.custom_model);
     const summary = connectionRoot.querySelector('.lr-current-model');
-    summary.innerHTML = row ? estimateMarkup(row.estimate)
+    summary.innerHTML = row ? 'Preview · ' + estimateMarkup(row.estimate)
         + (canUse(row.model, plan(), pricing().plans) ? '' : ` · Requires ${escapeHtml(row.model.plan)} or higher`)
         : '<span class="lr-muted">Estimate unavailable</span>';
     summary.title = `${context().chatCompletionSettings?.custom_model || 'No model selected'} · ${tokens == null
         ? 'SillyTavern Total Tokens unavailable; open Chat Completion Preset to update its count'
-        : `${fmt(tokens)} SillyTavern Total Tokens`}`;
+        : `${fmt(tokens)} SillyTavern Total Tokens preview; the built request is counted when you generate`}`;
     if (connectionRoot.querySelector('.lr-picker-panel').open) connectionPicker.update();
 }
 
@@ -234,6 +234,7 @@ function loadSettings() {
     delete value.trackUsage;
     delete value.proxyPrefix;
     value.recommendEnabled = Boolean(value.recommendEnabled);
+    value.confirmCostEnabled = Boolean(value.confirmCostEnabled);
     value.priceWarnEnabled = value.priceWarnEnabled !== false;
     value.priceHistory = normalizePriceHistory(value.priceHistory);
     if (!value.priceWarnEnabled) value.priceHistory.pending = {};
@@ -362,8 +363,9 @@ async function initialize() {
         acknowledgePriceIncrease: (request, change) => {
             if (acknowledgePriceIncrease(settings.priceHistory, request.model, change)) persist();
         },
-        warnPriceIncrease: (change, signal, request, onShown) => showPriceIncrease(context(), request.model, change, signal, request.type, onShown),
-        choose: (recommendation, signal, request, change, onShown) => showRecommendations(context(), recommendation, signal, request.type, change, onShown),
+        warnPriceIncrease: (change, signal, request, onShown, review) => showPriceIncrease(context(), request.model, change, signal, request.type, onShown, review),
+        choose: (recommendation, signal, request, change, onShown, review) => showRecommendations(context(), recommendation, signal, request.type, change, onShown, review),
+        confirmRequest: (review, signal, request) => showRequestConfirmation(context(), review, signal, request.type),
         apply: (id, request) => {
             const current = context();
             if (isLiteRouterConnection(current) && current.chatCompletionSettings.custom_model === request.model

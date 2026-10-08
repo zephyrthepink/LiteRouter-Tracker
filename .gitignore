@@ -7,6 +7,7 @@
 /tests/*
 !/tests/model-pricing.test.js
 !/tests/request-tokens.test.js
+!/tests/request-confirmation.test.js
 *.log
 
 # Local development references
