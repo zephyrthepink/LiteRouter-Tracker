@@ -5,14 +5,26 @@ A SillyTavern extension for LiteRouter connections using **Chat Completion → C
 ## Features
 
 - **Better model search:** browse live models in Connection Profiles, filter with booru tags, and sort by price, status, speed, or requests per day. Models refresh automatically when you open API Connections or expand the LiteRouter model browser.
-- **Cost estimates:** see credits per request and requests per day using your chat's **Total Tokens**, selected plan, and Chat Optimization settings.
+- **More accurate pricing:** suggestions and request confirmations count the processed prompt, including triggered lorebooks and resolved macros. Connection Profiles show a **Total Tokens** preview.
 - **Simulated comparisons:** compare up to five models using a chat size you choose.
-- **Model recommendations:** suggest cheaper variants of the same base model before sending, or switch automatically. Outaged models are excluded.
+- **Model recommendations:** suggest cheaper variants of the same base model or switch automatically, retaining the built prompt. Outaged models are excluded.
+- **Optional cost confirmation:** review estimated credits and inspect the prompt before sending. Merges with suggestions and price warnings; disabled by default.
 - **Price-increase warnings:** warn once before sending when your selected model's price multiplier rises between pricing refreshes. Suggest mode shows the increase in red inside available recommendations. Otherwise, a separate dialog lets you cancel (the default) or continue, including in Automatic mode. Warnings are enabled by default and can be disabled under **Live data settings**.
 - **Credit tracking:** see requests made, estimated credits spent and remaining, time until reset, and usage history with filters and charts.
 - **Claude/Gemini Pro output tracking:** track their shared daily output limit, calculated as your daily premium credits × 20. Gemini Flash models are excluded; their requests and credit usage are still tracked.
+- **Request inspection:** expand **Last request** to view the processed prompt, estimated tokens, and API-reported input/output counts when available.
 
 Set your plan and Chat Optimization values in the extension settings to match your LiteRouter dashboard. Tracking covers requests made through SillyTavern while the extension is active; estimates do not sync with your account balance or other apps.
+
+Flat-cost models and non-metered context variants charge the listed price once per request. Named context variants (`:32k-context`, `:64k-context`, `:128k-context`, and `:256k-context`) use their own approximate input budget, capped by the model's native window; metered variants charge per 5,000 input tokens. Requests/day rounds down to count only requests fully covered by the daily allowance. Search by `type:32k-context`, or use `context:32k-context` to include every billing type with that budget. All four named budgets are available in tag browsing and suggestions.
+
+## Prompt and token counts
+
+Counts use SillyTavern's tokenizers on the captured request after prompt post-processing and custom body overrides. Lorebooks and macros are already resolved; counting does not rebuild the prompt. Prompt previews stay in memory.
+
+Pre-send counts are **estimates**. API-reported `prompt_tokens` and `completion_tokens` take precedence for tracking. Tool/schema formatting and tokenizer differences can affect estimates; local media counts are unavailable. Missing Claude/Gemini Pro output counts are estimated from reply text.
+
+Connection Profiles show a **Preview** based on SillyTavern's displayed total. Optional cost confirmation holds the built request for review; cancelling prevents it from being sent. Unavailable estimates and cached pricing are labelled.
 
 ## Installation
 

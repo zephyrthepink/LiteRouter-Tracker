@@ -10,6 +10,7 @@ export const DEFAULTS = Object.freeze({
     query: '', sort: 'name', transport: 'auto', refreshSeconds: 60,
     usage: { version: 1, days: {} }, modelColors: {},
     recommendEnabled: false, recommendMode: 'suggest', applyRecommended: false,
+    confirmCostEnabled: false,
     priceWarnEnabled: true, priceHistory: { version: 1, prices: {}, pending: {} },
 });
 export const SORTS = [
@@ -20,10 +21,11 @@ export const SORTS = [
 ];
 export const STATUS_LABELS = { operational: 'Operational', degraded: 'Degraded', outage: 'Outage', unknown: 'No status data' };
 export const MODEL_EXTRAS = ['cheap', 'code', 'thinking', 'non-reasoning', 'flatcost', 'official', 'stable', 'fp8', 'vertex'];
+export const CONTEXT_VARIANTS = ['32k-context', '64k-context', '128k-context', '256k-context', 'full-context'];
 const EXTRAS = MODEL_EXTRAS;
 const ALIASES = { rpd: 'requests', mult: 'multiplier' };
 const NUMERIC = new Set(['requests', 'multiplier', 'tps', 'latency']);
-const CATEGORY = new Set(['status', 'type', 'provider', 'plan']);
+const CATEGORY = new Set(['status', 'type', 'context', 'provider', 'plan']);
 const NUMBER_QUERY = /^(>=|<=|>|<|=)?(\d+(?:\.\d+)?)(?:\.\.(\d+(?:\.\d+)?))?$/;
 export const baseModel = id => id.split(':')[0];
 export const provider = id => id.split(/[-:]/)[0].toLowerCase();
@@ -83,8 +85,23 @@ export function modelStatus(model, statusMap) {
 export function modelType(model) {
     const tokens = model.tokens;
     if (tokens.includes('free')) return 'free';
-    if (tokens.includes('metered')) return tokens.includes('full-context') ? 'metered-full-context' : 'metered';
-    return tokens.includes('full-context') ? 'full-context' : 'premium';
+    const context = CONTEXT_VARIANTS.find(value => tokens.includes(value));
+    if (tokens.includes('metered')) return context ? `metered-${context}` : 'metered';
+    if (context) return context;
+    return /-flatcost(?=-|$)/.test(baseModel(model.id)) ? 'flatcost' : 'premium';
+}
+export function modelContextLimit(model) {
+    const named = CONTEXT_VARIANTS.find(value => value !== 'full-context' && model.tokens.includes(value));
+    const budget = named ? parseInt(named, 10) * 1000 : null;
+    return budget && model.ctx ? Math.min(budget, model.ctx) : budget ?? model.ctx ?? null;
+}
+export function modelWindow(model, plan, settings) {
+    const overrides = CONTEXT_VARIANTS.some(value => model.tokens.includes(value));
+    const limit = modelContextLimit(model);
+    if (overrides) return limit;
+    const managed = model.tokens.includes('free') ? 5000
+        : optimizationWindow(plan, settings, model.id.includes('claude')).effective;
+    return Math.min(managed, limit ?? Infinity);
 }
 export function optimizationWindow(plan, settings, claude = false) {
     const system = Number(settings[claude ? 'claudeSystem' : 'generalSystem']);
@@ -103,23 +120,24 @@ export function calculate(model, inputTokens, plan, settings, rules = { premiumB
     const type = modelType(model);
     const credits = settings.credits == null ? plan.cap : Number(settings.credits);
     const result = { type, optimization: null, cost: null, requests: null, countedTokens: null };
+    const window = modelWindow(model, plan, settings);
+    const tokens = inputTokens == null ? null : Math.min(Math.max(0, inputTokens), window ?? Infinity);
     // Official Credits docs: Basic limits vary by model; paid plans are unlimited.
     if (type === 'free') return { ...result, optimization: 1, cost: 1,
         requests: plan.name === 'Basic' ? null : Infinity, freeUnlimited: plan.name !== 'Basic',
-        countedTokens: inputTokens == null ? null : Math.min(inputTokens, 5000) };
-    if (type === 'full-context') return { ...result, optimization: 1, cost: model.cost,
-        requests: model.cost === 0 ? Infinity : Math.floor(credits / model.cost + 1e-9) };
+        countedTokens: tokens };
+    if (type === 'flatcost' || CONTEXT_VARIANTS.includes(type)) return { ...result, optimization: 1, cost: model.cost,
+        countedTokens: tokens, requests: maxRequests(credits, model.cost) };
     if (inputTokens == null) return result;
-    let tokens = Math.max(0, inputTokens);
-    if (type === 'metered-full-context') {
-        if (model.ctx) tokens = Math.min(tokens, model.ctx);
-    } else {
-        tokens = Math.min(tokens, optimizationWindow(plan, settings, model.id.includes('claude')).effective);
-    }
     const optimization = type.startsWith('metered') ? Math.max(1, Math.ceil(tokens / rules.block))
         : tokens <= rules.premiumBase ? 1 : 1 + Math.ceil((tokens - rules.premiumBase) / rules.block);
     const cost = Math.round(model.cost * optimization * 1000) / 1000;
-    return { ...result, optimization, cost, countedTokens: tokens, requests: cost === 0 ? Infinity : Math.floor(credits / cost + 1e-9) };
+    return { ...result, optimization, cost, countedTokens: tokens, requests: maxRequests(credits, cost) };
+}
+function maxRequests(credits, cost) {
+    if (cost === 0) return Infinity;
+    // Count only requests fully covered by the allowance.
+    return Math.floor(credits / cost + 1e-9);
 }
 
 export function parseTokenCount(element) {
@@ -136,7 +154,9 @@ export function parseTokenCount(element) {
 export function tagGroups(models, plans) {
     return [
         ['status', ['operational', 'degraded', 'outage', 'unknown']],
-        ['type', ['premium', 'metered', 'full-context', 'metered-full-context', 'free']],
+        ['type', ['premium', 'metered', 'full-context', 'metered-full-context', 'free', 'flatcost',
+            ...CONTEXT_VARIANTS.filter(value => value !== 'full-context').flatMap(value => [value, `metered-${value}`])]],
+        ['context', CONTEXT_VARIANTS],
         ['plan', plans.map(p => p.name.toLowerCase())],
         ['provider', [...new Set(models.map(m => provider(m.id)))].sort()],
         ['is', ['usable', 'reasoning']], ['extra', EXTRAS],
@@ -175,6 +195,7 @@ export function testTag(key, value, row, plan, plans) {
             && !/-non-reasoning(?=-|$)/.test(baseModel(model.id));
     }
     if (key === 'extra') return [...baseModel(model.id).matchAll(/-(cheap|code|thinking|non-reasoning|flatcost|official|stable|fp8|vertex)(?=-|$)/g)].some(m => m[1] === value);
+    if (key === 'context') return model.tokens.includes(value);
     const category = { status: status.key, type: estimate.type, provider: provider(model.id), plan: model.plan.toLowerCase() };
     if (CATEGORY.has(key)) return category[key] === value;
     const number = { requests: estimate.requests, multiplier: model.cost, tps: status.tps, latency: status.latency }[key];

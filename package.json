@@ -5,6 +5,6 @@
     "type": "module",
     "scripts": {
         "test": "node --test tests/*.test.js",
-        "check": "node --check index.js && node --check core.js && node --check live-data.js && node --check picker.js && node --check usage.js && node --check usage-ui.js && node --check request-tracker.js && node --check server/literouter-data.mjs && node --check recommendations.js && node --check recommendation-ui.js && node --check price-changes.js"
+        "check": "node --check index.js && node --check core.js && node --check live-data.js && node --check picker.js && node --check usage.js && node --check usage-ui.js && node --check request-tracker.js && node --check server/literouter-data.mjs && node --check recommendations.js && node --check recommendation-ui.js && node --check price-changes.js && node --check request-tokens.js && node --check request-inspector.js"
     }
 }

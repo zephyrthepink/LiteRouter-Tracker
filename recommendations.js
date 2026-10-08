@@ -28,6 +28,19 @@ export function recommendModels({ modelId, inputTokens, pricing, status, setting
     return { base, current, original, inputTokens, pool, choices };
 }
 
+export function requestReview({ request, counted, pricing, stale, settings, modelId = request.model }) {
+    const rawTokens = typeof counted === 'object' && counted ? counted.tokens : counted;
+    const inputTokens = Number.isSafeInteger(rawTokens) && rawTokens >= 0 ? rawTokens : null;
+    const model = pricing?.models.find(value => value.id === modelId);
+    const plan = pricing?.plans.find(value => value.name === settings.plan);
+    const promptProcessed = counted?.messages != null;
+    const prompt = promptProcessed ? counted : { tokens: inputTokens ?? null, source: 'unknown', messages: request.messages,
+        tools: request.tools, note: [counted?.note, 'Processed preview unavailable; showing the assembled prompt.'].filter(Boolean).join(' ') };
+    return { model: modelId, inputTokens: inputTokens ?? null, prompt, promptProcessed, stale: Boolean(stale),
+        estimate: model && plan ? calculate(model, inputTokens ?? null, plan, settings, pricing.rules) : null,
+        pool: model ? modelType(model) === 'free' ? 'free' : 'premium' : null };
+}
+
 function throwIfAborted(signal) {
     if (signal?.aborted) throw signal.reason ?? new DOMException('Request cancelled', 'AbortError');
 }
@@ -44,14 +57,15 @@ export function abortable(promise, signal) {
 
 // Install outside the usage observer so it prices/records the model actually sent.
 export function installRequestRecommender({ target = globalThis, getSettings, refresh, getData, getInputTokens, choose, apply, notify,
-    getPriceIncrease, acknowledgePriceIncrease = () => {}, warnPriceIncrease }) {
+    getPriceIncrease, acknowledgePriceIncrease = () => {}, warnPriceIncrease, confirmRequest }) {
     const original = target.fetch;
     const warningsEnabled = () => getSettings().priceWarnEnabled !== false
         && typeof getPriceIncrease === 'function' && typeof warnPriceIncrease === 'function';
+    const decisionsEnabled = () => getSettings().recommendEnabled || warningsEnabled() || getSettings().confirmCostEnabled;
     // Serialize held decisions so concurrent requests cannot display the same warning.
     let decisionQueue = Promise.resolve();
     const wrapped = async function(input, options) {
-        if (!getSettings().recommendEnabled && !warningsEnabled()) return original.call(this, input, options);
+        if (!decisionsEnabled()) return original.call(this, input, options);
         let data;
         const url = typeof input === 'string' || input instanceof URL ? String(input) : input?.url;
         try {
@@ -72,7 +86,7 @@ export function installRequestRecommender({ target = globalThis, getSettings, re
         decisionQueue = preceding.then(() => unlocked);
         try {
             await abortable(preceding, signal);
-            if (!getSettings().recommendEnabled && !warningsEnabled()) return original.call(this, input, options);
+            if (!decisionsEnabled()) return original.call(this, input, options);
             let recommendation;
             try {
                 await abortable(refresh(), signal);
@@ -81,14 +95,32 @@ export function installRequestRecommender({ target = globalThis, getSettings, re
                 notify('Live data could not be refreshed before this request.', 'warning');
             }
             const settings = structuredClone(getSettings()), live = getData();
+            const canRecommend = settings.recommendEnabled && !live.pricing?.stale && !live.status?.stale
+                && live.pricing?.data && live.status?.data;
+            let counted = null;
+            if (settings.confirmCostEnabled || canRecommend) {
+                try { counted = await abortable(getInputTokens(data, signal), signal); }
+                catch {
+                    throwIfAborted(signal);
+                    counted = { tokens: null, source: 'unknown', messages: null, note: 'Processed prompt token count is unavailable.' };
+                }
+            }
             if (settings.recommendEnabled) {
                 try {
                     if (live.pricing?.stale || live.status?.stale || !live.pricing?.data || !live.status?.data) {
                         notify('Recommendation skipped: live pricing or status is unavailable. Using your selected model.', 'warning');
                     } else {
-                        const tokens = await abortable(getInputTokens(data), signal);
-                        recommendation = recommendModels({ modelId: data.model, inputTokens: tokens,
-                            pricing: live.pricing.data, status: live.status.data, settings });
+                        const tokens = typeof counted === 'object' && counted ? counted.tokens : counted;
+                        // A custom-body model override would defeat changing the
+                        // captured model field. Don't suggest ineffective switches.
+                        if (counted?.modelOverridden || counted?.model && counted.model.split(':')[0] !== data.model.split(':')[0]) {
+                            notify('Recommendation skipped: a custom request body overrides the selected model.', 'warning');
+                        } else {
+                            recommendation = recommendModels({ modelId: data.model, inputTokens: tokens,
+                                pricing: live.pricing.data, status: live.status.data, settings });
+                            if (recommendation && typeof counted === 'object') recommendation.prompt = counted;
+                            if (tokens == null) notify('Recommendation skipped: processed prompt token count is unavailable. Using your selected model.', 'warning');
+                        }
                     }
                 } catch {
                     throwIfAborted(signal);
@@ -99,20 +131,31 @@ export function installRequestRecommender({ target = globalThis, getSettings, re
             const change = warningsEnabled() ? getPriceIncrease(data) : null;
             const onShown = () => { if (change) acknowledgePriceIncrease(data, change); };
             const suggest = getSettings().recommendEnabled && settings.recommendMode === 'suggest' && recommendation?.choices.length;
-            let selected;
+            const automatic = getSettings().recommendEnabled && settings.recommendMode === 'automatic' && recommendation?.choices.length;
+            let selected = automatic ? recommendation.choices[0].model.id : null;
+            const review = settings.confirmCostEnabled ? requestReview({ request: data, counted, pricing: live.pricing?.data,
+                stale: live.pricing?.stale, settings, modelId: selected ?? counted?.model ?? data.model }) : null;
             if (suggest) {
-                selected = await abortable(choose(recommendation, signal, data, change, onShown), signal);
+                selected = await abortable(choose(recommendation, signal, data, change, onShown, review), signal);
             } else {
-                if (change && !await abortable(warnPriceIncrease(change, signal, data, onShown), signal)) {
-                    throw new DOMException('Request cancelled after a model price increase', 'AbortError');
-                }
-                if (getSettings().recommendEnabled && settings.recommendMode === 'automatic' && recommendation?.choices.length) {
-                    selected = recommendation.choices[0].model.id;
+                if (change) {
+                    if (!await abortable(warnPriceIncrease(change, signal, data, onShown, review), signal)) {
+                        throw new DOMException('Request cancelled after a model price increase', 'AbortError');
+                    }
+                } else if (review) {
+                    if (typeof confirmRequest !== 'function') throw new Error('LiteRouter request confirmation is unavailable.');
+                    if (!await abortable(confirmRequest(review, signal, data), signal)) {
+                        throw new DOMException('Request cancelled at cost confirmation', 'AbortError');
+                    }
                 }
             }
             throwIfAborted(signal);
             // Validate modal output against this request's captured recommendations.
-            if (!selected || !getSettings().recommendEnabled || !recommendation?.choices.some(row => row.model.id === selected)) {
+            const validSelection = recommendation?.choices.some(row => row.model.id === selected);
+            if (selected && review && !validSelection) throw new DOMException('Unrecognized model selection; request cancelled', 'AbortError');
+            // An explicit cost confirmation approves this captured model for
+            // this request, even if global recommendation settings change later.
+            if (!selected || (!review && !getSettings().recommendEnabled) || !validSelection) {
                 return original.call(this, input, options);
             }
             const body = JSON.stringify({ ...data, model: selected });

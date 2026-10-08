@@ -1,18 +1,21 @@
-import { DEFAULTS, isLiteRouterConnection, fmt, optimizationWindow, calculate, modelStatus, canUse, parseTokenCount, chatSizes } from './core.js';
+import { DEFAULTS, isLiteRouterConnection, fmt, optimizationWindow, modelWindow, calculate, modelStatus, canUse, parseTokenCount, chatSizes } from './core.js';
 import { LiveData } from './live-data.js';
 import { ModelPicker, escapeHtml } from './picker.js';
 import { normalizeUsage, recordUsage, assignColor } from './usage.js';
 import { UsageView } from './usage-ui.js';
 import { installRequestTracker } from './request-tracker.js';
 import { installRequestRecommender } from './recommendations.js';
-import { showRecommendations, showPriceIncrease } from './recommendation-ui.js';
+import { showRecommendations, showPriceIncrease, showRequestConfirmation } from './recommendation-ui.js';
 import { normalizePriceHistory, updatePriceHistory, acknowledgePriceIncrease } from './price-changes.js';
+import { createRequestTokenCounter } from './request-tokens.js';
+import { renderRequestInspector } from './request-inspector.js';
 
 const MODULE = 'literouter';
 const context = () => SillyTavern.getContext();
 let settings, settingsRoot, connectionRoot, connectionPicker, comparisonPicker, live, usageView;
 let active = false, tokens = null, loading = false, lastRefresh = 0, lastSignature = '', chartTokens = null;
 let refreshPromise = null;
+let lastRequest = null;
 
 function pricing() { return live.entries.pricing?.data; }
 function plan() { return pricing()?.plans.find(p => p.name === settings.plan) ?? pricing()?.plans[0]; }
@@ -70,12 +73,12 @@ function renderConnection() {
     if (!active) return;
     const row = modelRows(tokens).find(r => r.model.id === context().chatCompletionSettings?.custom_model);
     const summary = connectionRoot.querySelector('.lr-current-model');
-    summary.innerHTML = row ? estimateMarkup(row.estimate)
+    summary.innerHTML = row ? 'Preview · ' + estimateMarkup(row.estimate)
         + (canUse(row.model, plan(), pricing().plans) ? '' : ` · Requires ${escapeHtml(row.model.plan)} or higher`)
         : '<span class="lr-muted">Estimate unavailable</span>';
     summary.title = `${context().chatCompletionSettings?.custom_model || 'No model selected'} · ${tokens == null
         ? 'SillyTavern Total Tokens unavailable; open Chat Completion Preset to update its count'
-        : `${fmt(tokens)} SillyTavern Total Tokens`}`;
+        : `${fmt(tokens)} SillyTavern Total Tokens preview; the built request is counted when you generate`}`;
     if (connectionRoot.querySelector('.lr-picker-panel').open) connectionPicker.update();
 }
 
@@ -119,13 +122,13 @@ function renderComparison() {
         placeComparisonReset();
         return;
     }
-    const max = Math.max(optimizationWindow(plan(), settings).effective, optimizationWindow(plan(), settings, true).effective);
+    const max = Math.max(...models.map(model => modelWindow(model, plan(), settings) ?? settings.hypotheticalTokens));
     const sizes = chatSizes(settings.hypotheticalTokens, max);
     if (!sizes.includes(chartTokens)) chartTokens = settings.hypotheticalTokens;
     output.innerHTML = `<h4>Requests per day by chat size</h4><p class="lr-muted"><span class="lr-opt">opt = optimization</span> · <span class="lr-credit">credits/request</span> · <span class="lr-requests">requests/day</span></p>
         <div class="lr-comparison-wrap"><table class="lr-comparison-table"><thead><tr><th scope="col">Input tokens</th>${models.map(m => `<th scope="col">${escapeHtml(m.id)}</th>`).join('')}</tr></thead><tbody>${sizes.map(size => `<tr class="${size === settings.hypotheticalTokens ? 'lr-current' : ''}"><th scope="row">${fmt(size)}${size === settings.hypotheticalTokens ? ' (hypothetical)' : ''}${size === max ? ' (window max)' : ''}</th>${models.map(m => `<td>${comparisonCell(m, size)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
         <h4><label>Requests per day at <select class="text_pole lr-chart-size" aria-label="Chat size for requests per day bars">${sizes.map(size => `<option value="${size}"${size === chartTokens ? ' selected' : ''}>${fmt(size)} tokens</option>`).join('')}</select></label></h4>
-        <div class="lr-bars"></div><p class="lr-muted">Basic free-model limits are not supplied; paid plans have unlimited free requests. Flat full-context models ignore chat size; metered full-context models use their native window. Estimates follow the calculator's caps and do not measure remaining quota.</p>`;
+        <div class="lr-bars"></div><p class="lr-muted">Basic free-model limits are not supplied; paid plans have unlimited free requests. Flat-cost and non-metered context variants charge a fixed price. Context variants use their own budget, capped by the native window. Requests/day counts only requests fully covered by the daily allowance. Estimates do not measure remaining quota.</p>`;
     placeComparisonReset();
     output.querySelector('.lr-chart-size').addEventListener('change', event => { chartTokens = Number(event.target.value); renderBars(models); });
     renderBars(models);
@@ -231,6 +234,7 @@ function loadSettings() {
     delete value.trackUsage;
     delete value.proxyPrefix;
     value.recommendEnabled = Boolean(value.recommendEnabled);
+    value.confirmCostEnabled = Boolean(value.confirmCostEnabled);
     value.priceWarnEnabled = value.priceWarnEnabled !== false;
     value.priceHistory = normalizePriceHistory(value.priceHistory);
     if (!value.priceWarnEnabled) value.priceHistory.pending = {};
@@ -317,44 +321,40 @@ async function initialize() {
     usageView = new UsageView(settingsRoot.querySelector('.lr-usage'), {
         getSettings: () => settings, getBudget: () => settings.credits ?? plan()?.cap ?? null, getPlan: plan, persist,
     });
+    const countRequest = createRequestTokenCounter({
+        getHeaders: () => context().getRequestHeaders(),
+        parseYaml: SillyTavern.libs?.yaml?.parse,
+    });
+    const inspector = settingsRoot.querySelector('.lr-request-inspector');
     installRequestTracker({
         snapshot: request => {
-            const current = context(), data = pricing();
-            const sameConnection = current.chatCompletionSettings?.custom_url === request.custom_url && current.chatCompletionSettings?.custom_model === request.model;
-            const displayedTokens = sameConnection && ['normal', 'swipe', 'continue', 'regenerate'].includes(request.type) ? readTotalTokens() : null;
-            const inputTokens = (async () => {
-                try {
-                    if (displayedTokens != null) return { tokens: displayedTokens, source: 'st-total' };
-                    if (typeof current.getTokenCountAsync !== 'function' || !Array.isArray(request.messages)) return null;
-                    const count = await current.getTokenCountAsync(JSON.stringify(request.messages));
-                    return Number.isSafeInteger(count) && count >= 0 ? { tokens: count, source: 'tokenizer' } : null;
-                } catch { return null; }
-            })();
-            return { pricingModel: structuredClone(data?.models.find(model => model.id === request.model) ?? null),
+            const data = pricing(), inputTokens = countRequest(request);
+            const model = countRequest.getModel(request) ?? request.model;
+            const view = { model, count: null, usage: null };
+            lastRequest = view;
+            renderRequestInspector(inspector, view);
+            void inputTokens.then(count => {
+                view.count = count;
+                if (lastRequest === view) renderRequestInspector(inspector, view);
+            });
+            return { model, pricingModel: structuredClone(data?.models.find(value => value.id === model) ?? null),
                 plan: structuredClone(plan() ?? null), rules: structuredClone(data?.rules),
                 settings: Object.fromEntries(['credits', 'generalSystem', 'generalConversation', 'claudeSystem', 'claudeConversation'].map(key => [key, settings[key]])),
-                inputTokens, stale: Boolean(live.entries.pricing?.stale),
-                countOutputTokens: async replies => {
-                    if (typeof current.getTokenCountAsync !== 'function') return null;
-                    const counts = await Promise.all(replies.map(reply => current.getTokenCountAsync(reply)));
-                    return counts.every(count => Number.isSafeInteger(count) && count >= 0) ? counts.reduce((total, count) => total + count, 0) : null;
-                } };
+                inputTokens, view, stale: Boolean(live.entries.pricing?.stale),
+                countOutputTokens: replies => countRequest.countOutputTokens(model, replies) };
         },
-        record: entry => { recordUsage(settings.usage, entry); assignColor(entry.model, settings.modelColors); persist(); usageView.render(); },
+        record: (entry, capture) => {
+            recordUsage(settings.usage, entry); assignColor(entry.model, settings.modelColors); persist(); usageView.render();
+            capture.view.usage = entry;
+            if (lastRequest === capture.view) renderRequestInspector(inspector, capture.view);
+        },
         onError: error => console.warn('LiteRouter usage tracking:', error),
     });
     installRequestRecommender({
         getSettings: () => settings,
         refresh,
         getData: () => live.entries,
-        getInputTokens: async request => {
-            const current = context().chatCompletionSettings;
-            const displayed = current.custom_url === request.custom_url && current.custom_model === request.model
-                && ['normal', 'swipe', 'continue', 'regenerate'].includes(request.type) ? readTotalTokens() : null;
-            if (displayed != null) return displayed;
-            if (!Array.isArray(request.messages) || typeof context().getTokenCountAsync !== 'function') return null;
-            return await context().getTokenCountAsync(JSON.stringify(request.messages));
-        },
+        getInputTokens: countRequest,
         getPriceIncrease: request => {
             const current = context().chatCompletionSettings;
             return settings.priceWarnEnabled && current?.custom_model === request.model && current.custom_url === request.custom_url
@@ -363,8 +363,9 @@ async function initialize() {
         acknowledgePriceIncrease: (request, change) => {
             if (acknowledgePriceIncrease(settings.priceHistory, request.model, change)) persist();
         },
-        warnPriceIncrease: (change, signal, request, onShown) => showPriceIncrease(context(), request.model, change, signal, request.type, onShown),
-        choose: (recommendation, signal, request, change, onShown) => showRecommendations(context(), recommendation, signal, request.type, change, onShown),
+        warnPriceIncrease: (change, signal, request, onShown, review) => showPriceIncrease(context(), request.model, change, signal, request.type, onShown, review),
+        choose: (recommendation, signal, request, change, onShown, review) => showRecommendations(context(), recommendation, signal, request.type, change, onShown, review),
+        confirmRequest: (review, signal, request) => showRequestConfirmation(context(), review, signal, request.type),
         apply: (id, request) => {
             const current = context();
             if (isLiteRouterConnection(current) && current.chatCompletionSettings.custom_model === request.model
