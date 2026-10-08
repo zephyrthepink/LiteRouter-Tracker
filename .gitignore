@@ -4,7 +4,9 @@
 /coverage/
 /playwright-report/
 /test-results/
-/tests/
+/tests/*
+!/tests/model-pricing.test.js
+!/tests/request-tokens.test.js
 *.log
 
 # Local development references

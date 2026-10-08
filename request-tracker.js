@@ -6,6 +6,12 @@ const textContent = value => typeof value === 'string' ? value : Array.isArray(v
 const toolContent = calls => Array.isArray(calls) ? calls.map(call => `${call?.function?.name ?? ''}${call?.function?.arguments ?? ''}`).join('\n') : '';
 const tokenCount = value => Number.isSafeInteger(value) && value >= 0 ? value : null;
 
+function inputTokenTotal(data) {
+    const counts = [tokenCount(data?.usage?.prompt_tokens), tokenCount(data?.usage?.input_tokens),
+        tokenCount(data?.usageMetadata?.promptTokenCount)];
+    return counts.find(count => count > 0) ?? counts.find(count => count != null) ?? null;
+}
+
 function outputTokenTotal(data) {
     const completion = tokenCount(data?.usage?.completion_tokens);
     if (completion > 0) return completion;
@@ -36,7 +42,7 @@ export function installRequestTracker({ target = globalThis, snapshot, record, o
                 request = typeof body === 'string' ? JSON.parse(body) : null;
                 if (typeof request?.model === 'string' && request.model && isLiteRouterConnection({ mainApi: 'openai', chatCompletionSettings: { ...request, custom_model: request.model } })) {
                     capture = snapshot(request);
-                    if (capture) capture = { ...capture, startedAt: now(), model: request.model };
+                    if (capture) capture = { ...capture, startedAt: now(), model: capture.model ?? request.model };
                 }
             }
         } catch (error) { onError(error); }
@@ -90,7 +96,8 @@ export class CompletionObserver {
         if (this.finished) return;
         if (data?.error) { this.failed = true; return; }
         if (Array.isArray(data?.choices) && data.choices.length > 0) this.seen = true;
-        if (Number.isSafeInteger(data?.usage?.prompt_tokens) && data.usage.prompt_tokens >= 0) { this.apiTokens = data.usage.prompt_tokens; this.seen = true; }
+        const inputTokens = inputTokenTotal(data);
+        if (inputTokens != null) { this.apiTokens = Math.max(this.apiTokens ?? 0, inputTokens); this.seen = true; }
         const outputTokens = outputTokenTotal(data);
         if (outputTokens != null) {
             // SSE usage values are request totals, including reasoning and all choices.
@@ -143,6 +150,6 @@ export class CompletionObserver {
         this.record({ model: capture.model, startedAt: capture.startedAt, inputTokens, outputTokens, outputTokenSource, partial,
             tokenSource: this.apiTokens != null ? 'api' : fallback?.source ?? 'unknown',
             cost: estimate?.cost ?? null, type: estimate?.type ?? 'unknown', stale: capture.stale,
-            premiumAllowance: capture.plan ? capture.settings.credits ?? capture.plan.cap : null });
+            premiumAllowance: capture.plan ? capture.settings.credits ?? capture.plan.cap : null }, capture);
     }
 }

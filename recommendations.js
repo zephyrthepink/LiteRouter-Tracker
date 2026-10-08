@@ -86,9 +86,18 @@ export function installRequestRecommender({ target = globalThis, getSettings, re
                     if (live.pricing?.stale || live.status?.stale || !live.pricing?.data || !live.status?.data) {
                         notify('Recommendation skipped: live pricing or status is unavailable. Using your selected model.', 'warning');
                     } else {
-                        const tokens = await abortable(getInputTokens(data), signal);
-                        recommendation = recommendModels({ modelId: data.model, inputTokens: tokens,
-                            pricing: live.pricing.data, status: live.status.data, settings });
+                        const counted = await abortable(getInputTokens(data, signal), signal);
+                        const tokens = typeof counted === 'object' && counted ? counted.tokens : counted;
+                        // A custom-body model override would defeat changing the
+                        // captured model field. Don't suggest ineffective switches.
+                        if (counted?.modelOverridden || counted?.model && counted.model.split(':')[0] !== data.model.split(':')[0]) {
+                            notify('Recommendation skipped: a custom request body overrides the selected model.', 'warning');
+                        } else {
+                            recommendation = recommendModels({ modelId: data.model, inputTokens: tokens,
+                                pricing: live.pricing.data, status: live.status.data, settings });
+                            if (recommendation && typeof counted === 'object') recommendation.prompt = counted;
+                            if (tokens == null) notify('Recommendation skipped: processed prompt token count is unavailable. Using your selected model.', 'warning');
+                        }
                     }
                 } catch {
                     throwIfAborted(signal);

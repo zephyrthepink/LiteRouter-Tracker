@@ -5,14 +5,23 @@ A SillyTavern extension for LiteRouter connections using **Chat Completion → C
 ## Features
 
 - **Better model search:** browse live models in Connection Profiles, filter with booru tags, and sort by price, status, speed, or requests per day. Models refresh automatically when you open API Connections or expand the LiteRouter model browser.
-- **Cost estimates:** see credits per request and requests per day using your chat's **Total Tokens**, selected plan, and Chat Optimization settings.
+- **Cost estimates:** browse credits per request and requests per day using SillyTavern's **Total Tokens** preview, selected plan, and Chat Optimization settings. Suggestions and tracked requests count the captured, processed prompt instead.
 - **Simulated comparisons:** compare up to five models using a chat size you choose.
-- **Model recommendations:** suggest cheaper variants of the same base model before sending, or switch automatically. Outaged models are excluded.
+- **Model recommendations:** suggest cheaper variants of the same base model before sending, or switch automatically. Uses the processed prompt's token estimate and offers an **Inspect processed prompt** view. Choosing a model retains the built prompt, including selected lorebook entries and resolved macros. Outaged models are excluded.
 - **Price-increase warnings:** warn once before sending when your selected model's price multiplier rises between pricing refreshes. Suggest mode shows the increase in red inside available recommendations. Otherwise, a separate dialog lets you cancel (the default) or continue, including in Automatic mode. Warnings are enabled by default and can be disabled under **Live data settings**.
 - **Credit tracking:** see requests made, estimated credits spent and remaining, time until reset, and usage history with filters and charts.
 - **Claude/Gemini Pro output tracking:** track their shared daily output limit, calculated as your daily premium credits × 20. Gemini Flash models are excluded; their requests and credit usage are still tracked.
+- **Request inspection:** expand **Last request** in the extension settings to see processed prompt content, its tokenizer estimate, and API-reported input/output counts when available. Prompt previews stay in memory and are not saved to usage history.
 
 Set your plan and Chat Optimization values in the extension settings to match your LiteRouter dashboard. Tracking covers requests made through SillyTavern while the extension is active; estimates do not sync with your account balance or other apps.
+
+Flat-cost models and non-metered context variants charge the listed price once per request. Named context variants (`:32k-context`, `:64k-context`, `:128k-context`, and `:256k-context`) use their own approximate input budget, capped by the model's native window; metered variants charge per 5,000 input tokens. Requests/day rounds down to count only requests fully covered by the daily allowance. Search by `type:32k-context`, or use `context:32k-context` to include every billing type with that budget. All four named budgets are available in tag browsing and suggestions.
+
+## Prompt and token counts
+
+Before sending, suggestions count the messages captured from that generation, after SillyTavern's configured prompt post-processing and custom body overrides. This includes lorebook entries actually retained in the prompt, the selected random-macro values, comment removal, and trimmed whitespace. Counting does not rebuild the prompt or evaluate macros again. SillyTavern's built-in local processing and tokenizer endpoints are used; the optional LiteRouter server helper is not required.
+
+Pre-send counts are **tokenizer estimates**, not provider billing totals. Tool/schema formatting and model tokenizer differences can affect them. Media counts are marked unavailable locally rather than guessed. If processing or tokenization fails, recommendations are skipped and the original request continues; tracking still uses API usage when returned. LiteRouter response `usage.prompt_tokens` and `usage.completion_tokens` take precedence over local counts, including usage delivered at the end of a stream. Missing Claude/Gemini Pro output usage is estimated by encoding the captured reply text with the request's model, without adding chat-message formatting tokens. Hidden reasoning cannot be reconstructed when it is absent from both text and usage.
 
 ## Installation
 

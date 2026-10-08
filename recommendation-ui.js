@@ -1,7 +1,12 @@
-import { fmt, modelType, STATUS_LABELS } from './core.js';
+import { fmt, modelType, STATUS_LABELS, CONTEXT_VARIANTS } from './core.js';
 import { escapeHtml } from './picker.js';
+import { processedPromptMarkup } from './request-inspector.js';
 
-const PRICE_LABELS = { free: 'Free', metered: 'Metered', 'metered-full-context': 'Metered · Full context', 'full-context': 'Full context', premium: 'Standard pricing' };
+const PRICE_LABELS = { free: 'Free', metered: 'Metered', premium: 'Standard pricing', flatcost: 'Flat cost',
+    ...Object.fromEntries(CONTEXT_VARIANTS.flatMap(value => {
+        const label = value === 'full-context' ? 'Full context' : value.replace('k-context', 'k context');
+        return [[value, label], [`metered-${value}`, `Metered · ${label}`]];
+    })) };
 const creditLabel = (cost, pool) => `${pool} credit${cost === 1 ? '' : 's'}`;
 let recommendationSequence = 0;
 
@@ -94,8 +99,9 @@ export async function showRecommendations(context, recommendation, signal, reque
     content.className = 'lr-root lr-recommendations';
     // Separate radio groups keep concurrent native popups' selections independent.
     const radioName = `lr-recommendation-${++recommendationSequence}`;
-    content.innerHTML = `<div class="lr-recommendation-header"><div><span class="lr-recommendation-eyebrow">Model recommendations</span><h3>${escapeHtml(recommendation.base)}</h3></div><span class="lr-recommendation-tokens">${fmt(recommendation.inputTokens)} input tokens</span></div>
+    content.innerHTML = `<div class="lr-recommendation-header"><div><span class="lr-recommendation-eyebrow">Model recommendations</span><h3>${escapeHtml(recommendation.base)}</h3></div><span class="lr-recommendation-tokens">≈ ${fmt(recommendation.inputTokens)} input tokens</span></div>
         ${priceIncrease ? priceIncreaseMarkup(priceIncrease) : ''}
+        ${recommendation.prompt ? `<details class="lr-prompt-preview"><summary>Inspect processed prompt</summary><p class="lr-muted">This prompt is already built. Choosing a model keeps the same lorebook entries and resolved macros.</p>${processedPromptMarkup(recommendation.prompt)}</details>` : ''}
         <div class="lr-recommendation-current"><div><span class="lr-recommendation-caption">Selected model</span><b>${escapeHtml(recommendation.current.id)}</b></div><div class="lr-recommendation-current-price"><strong>${fmt(recommendation.original.cost)}</strong><span>${creditLabel(recommendation.original.cost, recommendation.pool)}</span></div></div>
         <div class="lr-recommendation-list-heading"><b>Lower-cost options</b><span class="lr-muted">${recommendation.choices.length} available · Estimated per request</span></div>
         <div class="lr-recommendation-list" role="radiogroup" aria-label="Suggested models">${recommendation.choices.map((row, index) => recommendationCard(row, index, recommendation, radioName)).join('')}</div>`;
