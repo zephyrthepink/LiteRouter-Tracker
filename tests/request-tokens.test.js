@@ -18,10 +18,15 @@ const processed = [
 
 function counterFixture({ process = () => processed, count = 60001, encode = 7 } = {}) {
     const calls = [];
+    let fullLength;
     const fetcher = async (url, options) => {
         const call = { url, ...options, payload: JSON.parse(options.body) }; calls.push(call);
-        if (url.endsWith('/process')) return json({ messages: await process(call.payload) });
-        if (url.includes('/count?')) return json({ token_count: count });
+        if (url.endsWith('/process')) { fullLength = undefined; return json({ messages: await process(call.payload) }); }
+        if (url.includes('/count?')) {
+            fullLength ??= call.payload.length;
+            return json({ token_count: typeof count === 'function' ? await count(call.payload)
+                : call.payload.length ? 3 + Math.floor((count - 3) * call.payload.length / fullLength) : 3 });
+        }
         if (url.includes('/encode?')) return json({ ids: Array.from({ length: encode }, (_, i) => i), count: encode });
         throw new Error('Unexpected network request: ' + url);
     };
@@ -58,7 +63,7 @@ test('snapshots messages before asynchronous processing and shares counts across
     assert.equal(f.calls[0].payload.messages[0].content, 'Rules. Chosen random branch: long.');
     const again = await f.counter({ ...request(), model: 'gpt-4o:cheap' });
     assert.equal(again.tokens, 60001);
-    assert.equal(f.calls.length, 2);
+    assert.equal(f.calls.length, 5);
     const differentModel = f.counter({ ...request(), model: 'claude-sonnet-4.5' });
     // The process fixture is held again for this different model.
     release(processed);
@@ -68,7 +73,7 @@ test('snapshots messages before asynchronous processing and shares counts across
 test('a request without post-processing goes straight to the structured tokenizer', async () => {
     const f = counterFixture(), input = { ...request(), custom_prompt_post_processing: '' };
     await f.counter(input);
-    assert.equal(f.calls.length, 1);
+    assert.equal(f.calls.length, 4);
     assert.deepEqual(f.calls[0].payload, input.messages);
 });
 
@@ -83,7 +88,7 @@ test('custom body overrides are applied after processing, and exclusions remove 
     assert.equal(result.tools, undefined);
     assert.deepEqual(f.calls[1].payload, overridden);
     assert.match(f.calls[1].url, /model=claude-sonnet-4.5$/);
-    assert.equal(f.calls.length, 2);
+    assert.equal(f.calls.length, 3);
 });
 
 test('missing processing support never silently counts the unprocessed prompt, and failed results can retry', async () => {
@@ -189,7 +194,7 @@ test('suggestions hold the built prompt, use its processed estimate, reuse the c
     assert.equal(sent[0].options.signal, abort.signal);
     assert.deepEqual(sent[0].options.headers, { 'X-Test': 'preserved' });
     assert.equal(sent[0].options.credentials, 'same-origin');
-    assert.equal(f.calls.length, 2); // One process and one count, reused by tracking.
+    assert.equal(f.calls.length, 5); // Processing, total, baseline, and two role groups, reused by tracking.
     assert.equal(entry.model, 'gpt-4o:cheap');
     assert.equal(entry.inputTokens, 60700);
     assert.equal(entry.outputTokens, 100);
@@ -198,7 +203,8 @@ test('suggestions hold the built prompt, use its processed estimate, reuse the c
 });
 
 test('inspection escapes untrusted prompt text and distinguishes reported usage from its estimate', () => {
-    const count = { tokens: 10, messages: [{ role: 'system', content: '<script>evil()</script>' }] };
+    const count = { tokens: 10, messages: [{ role: 'system', content: '<script>evil()</script>' }],
+        breakdown: { systemTokens: 4, conversationTokens: 3, otherTokens: 0, extraTokens: 0, formattingTokens: 3 } };
     assert.doesNotMatch(processedPromptMarkup(count), /<script>/);
     assert.match(processedPromptMarkup(count), /&lt;script&gt;/);
     const description = {}, content = {};
@@ -206,6 +212,85 @@ test('inspection escapes untrusted prompt text and distinguishes reported usage 
         { model: 'gpt-4o', count, usage: { inputTokens: 12, tokenSource: 'api', outputTokens: 3, outputTokenSource: 'api' } });
     assert.match(description.textContent, /12 input tokens · API reported/);
     assert.match(content.innerHTML, /10 input tokens · Tokenizer estimate/);
+    assert.match(content.innerHTML, /System \(system role\)/);
+    assert.match(content.innerHTML, /Conversation \(user \+ assistant\)/);
+    assert.match(content.innerHTML, /≈ 4/);
+    assert.match(content.innerHTML, /≈ 3/);
+    assert.match(content.innerHTML, /breakdown remains an estimate/);
+});
+
+test('counts roles after processing and keeps shared request padding out of both groups', async () => {
+    const count = messages => 12 + messages.reduce((sum, message) => sum + message.content.length + 4, 0);
+    const f = counterFixture({ count });
+    const result = await f.counter(request());
+    const systemTokens = processed[0].content.length + 4;
+    const conversationTokens = processed.slice(1).reduce((sum, message) => sum + message.content.length + 4, 0);
+    assert.deepEqual(result.breakdown, { systemTokens, conversationTokens, otherTokens: 0, extraTokens: 0, formattingTokens: 12 });
+    assert.equal(Object.values(result.breakdown).reduce((sum, value) => sum + value, 0), result.tokens);
+    assert.deepEqual(f.calls[2].payload, []);
+    assert.deepEqual(f.calls[3].payload, processed.slice(0, 1));
+    assert.deepEqual(f.calls[4].payload, processed.slice(1));
+});
+
+test('classifies custom override roles exactly and separates tool replies, developer instructions, and schemas', async () => {
+    const f = counterFixture({ count: messages => 3 + messages.length * 10, encode: 7 });
+    const messages = [{ role: 'system', content: 'Rules' }, { role: 'user', content: 'Question' },
+        { role: 'assistant', content: 'Tool call' }, { role: 'tool', content: 'Tool result' },
+        { role: 'developer', content: 'Instructions' }];
+    const result = await f.counter({ ...request(), custom_include_body: JSON.stringify({ messages }),
+        tools: [{ type: 'function', function: { name: 'search' } }],
+        json_schema: { name: 'reply', value: { type: 'object' } } });
+    assert.deepEqual(result.messages, messages);
+    assert.deepEqual(result.breakdown, { systemTokens: 10, conversationTokens: 20, otherTokens: 20, extraTokens: 7, formattingTokens: 3 });
+    assert.equal(result.tokens, 60);
+    const markup = processedPromptMarkup(result);
+    assert.match(markup, /Other message roles/);
+    assert.match(markup, /Tool definitions \/ response schema/);
+});
+
+test('empty and single-role prompts show zero for absent roles without redundant group requests', async () => {
+    for (const role of [null, 'system', 'user', 'assistant', 'tool']) {
+        const f = counterFixture({ count: messages => 3 + messages.length * 10 });
+        const messages = role ? [{ role, content: 'Text' }] : [];
+        const result = await f.counter({ ...request(), custom_prompt_post_processing: '', messages });
+        assert.deepEqual(result.breakdown, { systemTokens: role === 'system' ? 10 : 0,
+            conversationTokens: ['user', 'assistant'].includes(role) ? 10 : 0,
+            otherTokens: role === 'tool' ? 10 : 0, extraTokens: 0, formattingTokens: 3 });
+        assert.equal(f.calls.length, role ? 2 : 1);
+        assert.match(processedPromptMarkup(result), /≈ 0/);
+    }
+});
+
+test('native tokenizer boundary differences remain a signed adjustment and the total stays unchanged', async () => {
+    const f = counterFixture({ count: messages => messages.length === 0 ? 0 : messages.length === 3 ? 28 : messages.length * 10 });
+    const result = await f.counter({ ...request(), model: 'claude-sonnet-4.5' });
+    assert.deepEqual(result.breakdown, { systemTokens: 10, conversationTokens: 20, otherTokens: 0, extraTokens: 0, formattingTokens: -2 });
+    assert.equal(result.tokens, 28);
+    assert.match(processedPromptMarkup(result), /≈ -2/);
+});
+
+test('a failed role count preserves the available total and marks the breakdown unavailable', async () => {
+    const f = counterFixture({ count: messages => {
+        if (!messages.length) throw new Error('Baseline count failed');
+        return 100;
+    } });
+    const result = await f.counter(request());
+    assert.equal(result.tokens, 100);
+    assert.equal(result.source, 'tokenizer');
+    assert.equal(result.breakdown, null);
+    assert.match(result.breakdownNote, /Baseline count failed/);
+    assert.match(processedPromptMarkup(result), /System and conversation token counts unavailable/);
+});
+
+test('unstructured prompts and media do not claim to have a role breakdown', async () => {
+    for (const messages of ['Plain text prompt', [{ role: 'user', content: [{ type: 'image_url', image_url: { url: 'data:image/png;base64,AA' } }] }]]) {
+        const f = counterFixture();
+        const result = await f.counter({ ...request(), custom_prompt_post_processing: '', messages });
+        assert.equal(result.breakdown, null);
+        if (typeof messages === 'string') assert.equal(result.tokens, 7);
+        else assert.equal(result.tokens, null);
+        assert.match(processedPromptMarkup(result), /System and conversation token counts unavailable/);
+    }
 });
 
 test('custom YAML uses the supplied ST parser and invalid YAML follows the backend ignore rule', async () => {
@@ -263,7 +348,7 @@ test('cancelling a held suggestion prevents generation and does not rebuild or m
     const rejected = assert.rejects(pending, { name: 'AbortError' });
     abort.abort(); await rejected;
     assert.equal(generated, 0);
-    assert.equal(f.calls.length, 2);
+    assert.equal(f.calls.length, 5);
 });
 
 for (const stream of [false, true]) {
@@ -280,6 +365,6 @@ for (const stream of [false, true]) {
         const entry = await done;
         assert.equal(entry.inputTokens, 5001);
         assert.equal(entry.tokenSource, 'tokenizer');
-        assert.equal(f.calls.length, 2);
+        assert.equal(f.calls.length, 5);
     });
 }

@@ -12,7 +12,7 @@ A SillyTavern extension for LiteRouter connections using **Chat Completion → C
 - **Price-increase warnings:** warn once before sending when your selected model's price multiplier rises between pricing refreshes. Suggest mode shows the increase in red inside available recommendations. Otherwise, a separate dialog lets you cancel (the default) or continue, including in Automatic mode. Warnings are enabled by default and can be disabled under **Live data settings**.
 - **Credit tracking:** see requests made, estimated credits spent and remaining, time until reset, and usage history with filters and charts.
 - **Claude/Gemini Pro output tracking:** track their shared daily output limit, calculated as your daily premium credits × 20. Gemini Flash models are excluded; their requests and credit usage are still tracked.
-- **Request inspection:** expand **Last request** to view the processed prompt, estimated tokens, and API-reported input/output counts when available.
+- **Request inspection:** expand **Last request** to view the processed prompt, system and conversation (user + assistant) token estimates, and API-reported input/output counts when available. Pre-send prompt previews include the same breakdown.
 
 Set your plan and Chat Optimization values in the extension settings to match your LiteRouter dashboard. Tracking covers requests made through SillyTavern while the extension is active; estimates do not sync with your account balance or other apps.
 
@@ -21,6 +21,10 @@ Flat-cost models and non-metered context variants charge the listed price once p
 ## Prompt and token counts
 
 Counts use SillyTavern's tokenizers on the captured request after prompt post-processing and custom body overrides. Lorebooks and macros are already resolved; counting does not rebuild the prompt. Prompt previews stay in memory.
+
+The breakdown groups messages by their outgoing role: **System** counts only `system`; **Conversation** counts `user` and `assistant`. Other roles (such as `tool` or `developer`) and tool definitions/response schemas appear separately when present. Role estimates include message fields and per-message formatting. Shared request padding and tokenization boundary differences appear as a formatting adjustment, so the breakdown adds up to the tokenizer estimate without duplicating request overhead. API totals do not provide this role split. Unstructured text prompts and media show unavailable role counts.
+
+Source reference: SillyTavern builds a role-based `messages` request in [`public/scripts/openai.js`](https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/openai.js). Its [chat completion backend](https://github.com/SillyTavern/SillyTavern/blob/release/src/endpoints/backends/chat-completions.js) applies prompt processing and dispatches provider conversions from [`src/prompt-converters.js`](https://github.com/SillyTavern/SillyTavern/blob/release/src/prompt-converters.js). LiteRouter's Custom route sends OpenAI-compatible messages; SillyTavern does not perform a native Claude/Gemini conversion on that route. Counting follows [`src/endpoints/tokenizers.js`](https://github.com/SillyTavern/SillyTavern/blob/release/src/endpoints/tokenizers.js), including its request-level padding.
 
 Pre-send counts are **estimates**. API-reported `prompt_tokens` and `completion_tokens` take precedence for tracking. Tool/schema formatting and tokenizer differences can affect estimates; local media counts are unavailable. Missing Claude/Gemini Pro output counts are estimated from reply text.
 

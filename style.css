@@ -62,6 +62,12 @@
 .lr-picker-footer, .lr-comparison-actions { margin-top: 10px; }
 .lr-root .lr-prompt-preview { margin: 12px 0; }
 .lr-root .lr-prompt-preview > summary { cursor: pointer; font-size: 0.85em; }
+.lr-token-breakdown { margin: 10px 0 14px; }
+.lr-token-breakdown dl { margin: 8px 0; }
+.lr-token-breakdown dl > div { display: flex; justify-content: space-between; gap: 16px; padding: 4px 0; }
+.lr-token-breakdown dt { min-width: 0; overflow-wrap: anywhere; }
+.lr-token-breakdown dd { margin: 0; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.lr-token-breakdown > small { display: block; }
 .lr-root .lr-processed-prompt { display: block; width: 100%; max-height: 360px; resize: vertical; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; border: 1px solid var(--lr-border); border-radius: 8px; font: 0.8em monospace; text-align: left; }
 .lr-request-cost { margin: 12px 0; padding: 15px; border: 1px solid var(--lr-border); border-radius: 10px; background: var(--lr-surface); }
 .lr-request-cost .lr-cost-amount { display: block; margin: 5px 0; font-size: 1.4em; color: var(--lr-warn); }

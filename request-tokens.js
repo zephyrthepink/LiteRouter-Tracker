@@ -61,8 +61,38 @@ export function createRequestTokenCounter({ fetcher = globalThis.fetch.bind(glob
         if (!Array.isArray(result.ids) || !result.ids.length) throw new Error('SillyTavern tokenizer returned no tokens.');
         return result.ids.length;
     }
+    async function countMessages(messages, model, signal) {
+        const result = await post(`${TOKENIZER_PATH}/count?model=${encodeURIComponent(model)}`, messages, signal);
+        if (!validCount(result.token_count) || result.token_count === 0 && messages.length) {
+            throw new Error('SillyTavern returned an invalid token count.');
+        }
+        return result.token_count;
+    }
+    async function roleBreakdown(messages, messageTokens, extraTokens, model, signal) {
+        const groups = { systemTokens: [], conversationTokens: [], otherTokens: [] };
+        for (const message of messages) {
+            const key = message.role === 'system' ? 'systemTokens'
+                : ['user', 'assistant'].includes(message.role) ? 'conversationTokens' : 'otherTokens';
+            groups[key].push(message);
+        }
+        // ST's GPT counter adds padding once per request (including an empty
+        // array). Measure that baseline instead of hardcoding model rules.
+        // Native tokenizers join fields before encoding, so boundary differences
+        // belong in the formatting adjustment, not either role's message count.
+        const baseline = messages.length ? await countMessages([], model, signal) : messageTokens;
+        const entries = await Promise.all(Object.entries(groups).map(async ([key, group]) => {
+            if (!group.length) return [key, 0];
+            const total = group.length === messages.length ? messageTokens : await countMessages(group, model, signal);
+            const tokens = total - baseline;
+            if (!validCount(tokens)) throw new Error('Role token breakdown unavailable.');
+            return [key, tokens];
+        }));
+        const breakdown = Object.fromEntries(entries);
+        return { ...breakdown, extraTokens,
+            formattingTokens: messageTokens - entries.reduce((sum, [, tokens]) => sum + tokens, 0) };
+    }
     async function measure(captured, signal) {
-        const result = { tokens: null, source: 'unknown', model: captured.model, messages: null };
+        const result = { tokens: null, source: 'unknown', model: captured.model, messages: null, breakdown: null };
         try {
             let messages = structuredClone(captured.messages);
             if (Array.isArray(messages) && captured.custom_prompt_post_processing) {
@@ -86,23 +116,27 @@ export function createRequestTokenCounter({ fetcher = globalThis.fetch.bind(glob
             result.responseFormat = outgoing.response_format;
             const model = tokenizerModel(outgoing.model);
             if (!model) throw new Error('The outgoing model is unavailable.');
-            let tokens;
+            let tokens, messagesToCount;
             if (typeof outgoing.messages === 'string') {
                 tokens = await encode(outgoing.messages, model, signal);
             } else if (Array.isArray(outgoing.messages)) {
-                const counted = await post(`${TOKENIZER_PATH}/count?model=${encodeURIComponent(model)}`,
-                    countableMessages(outgoing.messages), signal);
-                tokens = counted.token_count;
-                if (!validCount(tokens) || tokens === 0 && outgoing.messages.length) throw new Error('SillyTavern returned an invalid token count.');
+                messagesToCount = countableMessages(outgoing.messages);
+                tokens = await countMessages(messagesToCount, model, signal);
             } else throw new Error('The outgoing messages are unavailable.');
             // Provider tool/schema framing is proprietary. Include their text in
             // the estimate rather than omitting it or mis-tokenizing JSON arrays.
             const extra = [outgoing.tools, outgoing.response_format].filter(value => value != null);
-            if (extra.length) tokens += await encode(extra.map(value => JSON.stringify(value)).join('\n'), model, signal);
+            const messageTokens = tokens;
+            const extraTokens = extra.length ? await encode(extra.map(value => JSON.stringify(value)).join('\n'), model, signal) : 0;
+            tokens += extraTokens;
             if (!validCount(tokens)) throw new Error('SillyTavern returned an invalid token count.');
             result.tokens = tokens;
             result.source = 'tokenizer';
             result.note = extra.length ? 'Tool and schema formatting is estimated; API usage takes precedence.' : null;
+            if (messagesToCount) {
+                try { result.breakdown = await roleBreakdown(messagesToCount, messageTokens, extraTokens, model, signal); }
+                catch (error) { result.breakdownNote = error.message || 'Role token breakdown unavailable.'; }
+            } else result.breakdownNote = 'Role counts require a structured chat completion prompt.';
         } catch (error) { result.note = error.message || 'Processed prompt count unavailable.'; }
         return result;
     }
