@@ -9,6 +9,7 @@ import { showRecommendations, showPriceIncrease, showRequestConfirmation } from 
 import { normalizePriceHistory, updatePriceHistory, acknowledgePriceIncrease } from './price-changes.js';
 import { createRequestTokenCounter } from './request-tokens.js';
 import { renderRequestInspector } from './request-inspector.js';
+import { createConnectionPreview } from './connection-preview.js';
 
 const MODULE = 'literouter';
 const context = () => SillyTavern.getContext();
@@ -16,6 +17,7 @@ let settings, settingsRoot, connectionRoot, connectionPicker, comparisonPicker, 
 let active = false, tokens = null, loading = false, lastRefresh = 0, lastSignature = '', chartTokens = null;
 let refreshPromise = null;
 let lastRequest = null;
+let connectionPreview = null;
 
 function pricing() { return live.entries.pricing?.data; }
 function plan() { return pricing()?.plans.find(p => p.name === settings.plan) ?? pricing()?.plans[0]; }
@@ -73,12 +75,18 @@ function renderConnection() {
     if (!active) return;
     const row = modelRows(tokens).find(r => r.model.id === context().chatCompletionSettings?.custom_model);
     const summary = connectionRoot.querySelector('.lr-current-model');
-    summary.innerHTML = row ? 'Preview · ' + estimateMarkup(row.estimate)
+    const preview = connectionPreview?.read(readTotalTokens()) ?? { source: 'native' };
+    const tokenLabel = preview.source === 'counting' ? 'Counting assembled prompt…'
+        : tokens == null ? 'Input count unavailable'
+            : `≈ ${fmt(tokens)} input tokens (${preview.source === 'native' ? 'SillyTavern fallback'
+                : preview.source === 'request' ? 'captured request' : 'assembled prompt'})`;
+    summary.innerHTML = row ? `Preview · ${escapeHtml(tokenLabel)} · ` + estimateMarkup(row.estimate)
         + (canUse(row.model, plan(), pricing().plans) ? '' : ` · Requires ${escapeHtml(row.model.plan)} or higher`)
         : '<span class="lr-muted">Estimate unavailable</span>';
-    summary.title = `${context().chatCompletionSettings?.custom_model || 'No model selected'} · ${tokens == null
-        ? 'SillyTavern Total Tokens unavailable; open Chat Completion Preset to update its count'
-        : `${fmt(tokens)} SillyTavern Total Tokens preview; the built request is counted when you generate`}`;
+    const sourceLabel = preview.source === 'native' ? 'SillyTavern Total Tokens fallback; waiting for an assembled prompt preview'
+        : preview.source === 'counting' ? 'Counting the assembled prompt after extension replacements'
+            : `${preview.source === 'request' ? 'Captured request' : 'Last assembled prompt'} preview · Tokenizer estimate${preview.model ? ` for ${preview.model}` : ''}${preview.note ? ` · ${preview.note}` : ''}`;
+    summary.title = `${context().chatCompletionSettings?.custom_model || 'No model selected'} · ${sourceLabel}. The actual request is counted again when you generate.`;
     if (connectionRoot.querySelector('.lr-picker-panel').open) connectionPicker.update();
 }
 
@@ -205,9 +213,11 @@ function addComparison(id) {
 function sync() {
     const current = context();
     active = settings.enabled && isLiteRouterConnection(current);
-    tokens = readTotalTokens();
+    const preview = connectionPreview?.read(readTotalTokens());
+    tokens = preview ? preview.tokens : readTotalTokens();
     usageView?.tick();
-    const signature = JSON.stringify([active, tokens, current.chatCompletionSettings?.custom_model, current.chatCompletionSettings?.custom_url]);
+    const signature = JSON.stringify([active, tokens, preview?.source, preview?.note, preview?.model,
+        current.chatCompletionSettings?.custom_model, current.chatCompletionSettings?.custom_url]);
     if (signature !== lastSignature) {
         lastSignature = signature;
         renderConnection();
@@ -325,10 +335,13 @@ async function initialize() {
         getHeaders: () => context().getRequestHeaders(),
         parseYaml: SillyTavern.libs?.yaml?.parse,
     });
+    connectionPreview = createConnectionPreview({ getContext: context, isEnabled: () => settings.enabled,
+        countRequest, onChange: sync });
     const inspector = settingsRoot.querySelector('.lr-request-inspector');
     installRequestTracker({
         snapshot: request => {
             const data = pricing(), inputTokens = countRequest(request);
+            connectionPreview.captureRequest(request, inputTokens);
             const model = countRequest.getModel(request) ?? request.model;
             const view = { model, count: null, usage: null };
             lastRequest = view;
@@ -378,6 +391,17 @@ async function initialize() {
     });
     $(document).on('input.literouter change.literouter', '#custom_api_url_text, #custom_model_id, #model_custom_select, #chat_completion_source, #main_api', () => queueMicrotask(sync));
     const { eventSource, event_types } = context();
+    if (event_types.GENERATE_AFTER_DATA) {
+        eventSource.makeLast(event_types.GENERATE_AFTER_DATA, connectionPreview.capture);
+    }
+    const invalidatePromptPreview = () => {
+        connectionPreview.invalidate();
+        sync();
+    };
+    for (const name of ['CHAT_CHANGED', 'SETTINGS_UPDATED', 'WORLDINFO_SETTINGS_UPDATED', 'OAI_PRESET_CHANGED_AFTER',
+        'MESSAGE_EDITED', 'MESSAGE_DELETED', 'MESSAGE_RECEIVED', 'CONNECTION_PROFILE_LOADED']) {
+        if (event_types[name]) eventSource.on(event_types[name], invalidatePromptPreview);
+    }
     for (const name of ['MAIN_API_CHANGED', 'CHATCOMPLETION_SOURCE_CHANGED', 'CHATCOMPLETION_MODEL_CHANGED', 'CONNECTION_PROFILE_LOADED', 'SETTINGS_UPDATED', 'PRESET_CHANGED', 'CHAT_CHANGED', 'GENERATION_ENDED']) {
         if (event_types[name]) eventSource.on(event_types[name], sync);
     }

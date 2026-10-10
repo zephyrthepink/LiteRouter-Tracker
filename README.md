@@ -5,7 +5,7 @@ A SillyTavern extension for LiteRouter connections using **Chat Completion → C
 ## Features
 
 - **Better model search:** browse live models in Connection Profiles, filter with booru tags, and sort by price, status, speed, or requests per day. Models refresh automatically when you open API Connections or expand the LiteRouter model browser.
-- **More accurate pricing:** suggestions and request confirmations count the processed prompt, including triggered lorebooks and resolved macros. Connection Profiles show a **Total Tokens** preview.
+- **More accurate pricing:** suggestions and request confirmations count the processed prompt, including triggered lorebooks and resolved macros. Connection Profiles count the assembled preview after extension replacements, including Megumin Suite's v10 fields.
 - **Simulated comparisons:** compare up to five models using a chat size you choose.
 - **Model recommendations:** suggest cheaper variants of the same base model or switch automatically, retaining the built prompt. Outaged models are excluded.
 - **Optional cost confirmation:** review estimated credits and inspect the prompt before sending. Merges with suggestions and price warnings; disabled by default.
@@ -28,7 +28,11 @@ Source reference: SillyTavern builds a role-based `messages` request in [`public
 
 Pre-send counts are **estimates**. API-reported `prompt_tokens` and `completion_tokens` take precedence for tracking. Tool/schema formatting and tokenizer differences can affect estimates; local media counts are unavailable. Missing Claude/Gemini Pro output counts are estimated from reply text.
 
-Connection Profiles show a **Preview** based on SillyTavern's displayed total. Optional cost confirmation holds the built request for review; cancelling prevents it from being sent. Unavailable estimates and cached pricing are labelled.
+Connection Profiles show a **Preview** counted from prompts SillyTavern has already assembled, after extensions such as Megumin Suite replace preset placeholders. LiteRouter only copies and counts the processed messages: it does not rebuild prompts, expand macros or reroll dice. The preview updates when SillyTavern performs its own dry run or builds an actual chat request. Megumin is optional, and its **show final prompt before sending** option can stay on or off. Until an assembled preview is available, SillyTavern's displayed total is used as a labelled fallback. Background utility requests do not replace this preview.
+
+Counts use the same tokenizers and prompt post-processing as request inspection. Static custom body overrides can be counted with the dry-run preview; overrides containing macros are deferred until SillyTavern resolves them in the actual request, and the preview labels this limitation. An assembled preview reflects the latest observed build: new user input, retrieval and generation-time macros can change the next actual request. Its captured values are counted separately before sending and are preserved by LiteRouter's request inspector and cost confirmation.
+
+Optional cost confirmation holds the built request for review; cancelling prevents it from being sent. Unavailable estimates and cached pricing are labelled.
 
 ## Installation
 
